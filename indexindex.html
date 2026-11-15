@@ -1,0 +1,3249 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f1a" id="metaTheme">
+<title>DeepShaft - Idle Mining</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tonconnect/ui@2/dist/tonconnect-ui.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   DEEPSHAFT - Telegram Mini App (Idle Mining)
+   Single-file build. Control panel contract documented in the
+   main <script> block at the bottom of this file.
+   =========================================================== */
+:root{
+  --bg:#0b0f1a; --bg2:#0d1322; --card:#131c2e; --card2:#182338; --line:#223047;
+  --txt:#eaf0fb; --mut:#8b98ad;
+  --accent:#f5b942; --accent2:#22d3ee;
+  --good:#34d399; --bad:#f87171; --gem:#e879f9;
+  --nav-h:68px; --tb-h:96px;
+  --status-clear:54px;
+  --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  font-family:'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:#05080f;color:var(--txt);overflow:hidden;
+  user-select:none;-webkit-user-select:none;touch-action:manipulation;
+}
+img{-webkit-user-drag:none}
+button{font-family:inherit}
+.hide{display:none!important}
+.mut{color:var(--mut)} .sm{font-size:12px} .xs{font-size:10.5px}
+.row{display:flex;align-items:center;gap:8px}
+.between{justify-content:space-between}
+.center{align-items:center}
+.grow{flex:1;min-width:0}
+.col{display:flex;flex-direction:column;gap:4px}
+.end{align-items:flex-end}
+.mt6{margin-top:6px}.mt10{margin-top:10px}.mt14{margin-top:14px}.mb10{margin-bottom:10px}
+.num{font-variant-numeric:tabular-nums}
+.ic{width:18px;height:18px;flex:none}
+.ic-ore{color:var(--accent)} .ic-gem{color:var(--gem)} .ic-ton{color:var(--accent2)}
+.note{font-size:11.5px;color:var(--mut);line-height:1.55}
+.hr{height:1px;background:var(--line);margin:12px 0;border:none}
+
+/* ---------- App shell ---------- */
+#appwrap{
+  position:relative;width:min(100vw,520px);margin:0 auto;
+  height:100vh;height:100dvh;height:var(--vh,100dvh);
+  background:var(--bg);overflow:hidden;
+}
+@media(min-width:560px){#appwrap{border-left:1px solid var(--line);border-right:1px solid var(--line)}}
+#bgfx{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:0}
+#bgfx:before{content:'';position:absolute;inset:0;
+  background:radial-gradient(700px 420px at 50% -8%, rgba(34,211,238,.07), transparent 70%),
+             radial-gradient(560px 400px at 110% 112%, rgba(245,185,66,.07), transparent 70%)}
+#bgfx .pt{position:absolute;border-radius:50%;animation:drift linear infinite}
+#view{
+  position:absolute;left:0;right:0;top:0;bottom:0;z-index:10;
+  padding:calc(var(--safe-t) + var(--tb-h) + 10px) 13px calc(var(--nav-h) + var(--safe-b) + 16px);
+  overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+#view::-webkit-scrollbar{display:none}
+.viewin{animation:fadein .28s ease}
+
+/* ---------- Splash ---------- */
+#splash{position:absolute;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;
+  background:radial-gradient(600px 420px at 50% 28%, #17223c, var(--bg));
+  transition:opacity .5s ease,visibility .5s}
+#splash.gone{opacity:0;visibility:hidden;pointer-events:none}
+#splash .slogo{width:112px;height:112px;filter:drop-shadow(0 14px 34px rgba(245,185,66,.35));animation:floaty 3s ease-in-out infinite}
+#splash .sname{font-size:30px;font-weight:800;letter-spacing:.2em;padding-left:.2em}
+#splash .stag{color:var(--mut);font-size:11.5px;letter-spacing:.34em;text-transform:uppercase;padding-left:.34em}
+#splash .sbar{width:190px;height:4px;background:var(--card);border-radius:99px;overflow:hidden;margin-top:10px}
+#splash .sbar i{display:block;height:100%;width:40%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:99px;animation:loadslide 1.1s ease-in-out infinite}
+
+/* ---------- Topbar (balance header - no logo/text) ---------- */
+#topbar{position:absolute;top:0;left:0;right:0;z-index:65;
+  padding:calc(var(--safe-t) + var(--status-clear)) 14px 12px;
+  background:linear-gradient(180deg,rgba(13,19,34,.97),rgba(11,15,26,.88));
+  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  border-bottom:1px solid rgba(34,48,71,.6);
+  display:flex;justify-content:center;align-items:flex-end;
+  min-height:calc(var(--safe-t) + var(--tb-h))}
+.tb-row1{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;max-width:100%;padding-bottom:4px}
+.tb-bal{flex:0 1 auto;min-width:0;max-width:90%;
+  display:flex;align-items:center;gap:7px;cursor:pointer;
+  background:var(--card);border:1px solid var(--line);border-radius:99px;
+  padding:7px 14px;overflow:hidden;transition:transform .12s}
+.tb-bal:active{transform:scale(.96)}
+.tb-bic{width:18px;height:18px;flex:none;display:flex;align-items:center;justify-content:center;
+  border-radius:6px;color:var(--accent);
+  background:linear-gradient(140deg,rgba(245,185,66,.18),rgba(245,185,66,.04));
+  border:1px solid rgba(245,185,66,.3)}
+.tb-bic .ic{width:13px;height:13px}
+.tb-bv{font-size:14px;font-weight:800;line-height:1;letter-spacing:-.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;color:var(--txt)}
+.tb-bc{font-size:9px;font-weight:800;letter-spacing:.12em;color:var(--mut);flex:none;text-transform:uppercase}
+.tb-wallet{display:none!important}
+.tb-dot{position:absolute;top:5px;right:5px;width:9px;height:9px;border-radius:50%;background:var(--good);
+  border:2px solid #0b1322;opacity:0;transition:opacity .25s}
+.tb-dot.on{opacity:1}
+.tb-row2{display:none!important}
+.tb-pill{display:inline-flex;align-items:center;gap:5px;background:var(--card);border:1px solid var(--line);
+  border-radius:999px;padding:6px 11px;font-weight:800;font-size:12px;line-height:1;white-space:nowrap;
+  max-width:100%;min-width:0;overflow:hidden}
+.tb-pill .ic{width:13px;height:13px;flex:none}
+.tb-pill span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-pill.gem{color:var(--gem);border-color:rgba(232,121,249,.35)}
+.tb-pill.lvl{color:var(--accent2);border-color:rgba(34,211,238,.35)}
+.tb-pill.rate{color:var(--good);border-color:rgba(52,211,153,.32);margin-left:auto}
+.pop{animation:pop .4s cubic-bezier(.34,1.56,.64,1)}
+
+/* ---------- Bottom navigation (redesigned with animated icons) ---------- */
+#nav{position:absolute;bottom:0;left:0;right:0;z-index:40;display:flex;justify-content:space-around;align-items:stretch;flex-wrap:nowrap;
+  padding:6px 4px calc(var(--safe-b) + 10px);
+  background:rgba(9,13,22,.94);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-top:1px solid rgba(34,48,71,.7)}
+.nav-b{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 2px 11px;background:none;border:none;
+  color:var(--mut);font-size:9px;font-weight:800;letter-spacing:.03em;cursor:pointer;position:relative;transition:color .2s}
+.nav-b .lb{text-align:center;white-space:nowrap;font-size:9px;letter-spacing:.03em;line-height:1}
+.nav-b .nav-ico{width:26px;height:26px;overflow:visible;transition:transform .28s cubic-bezier(.34,1.56,.64,1);flex:none}
+.nav-b.on{color:var(--accent)}
+.nav-b.on .nav-ico{transform:translateY(-3px) scale(1.15)}
+.nav-b:before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%) scaleX(0);width:34px;height:3px;border-radius:99px;
+  background:linear-gradient(90deg,var(--accent),var(--accent2));transition:transform .25s}
+.nav-b.on:before{transform:translateX(-50%) scaleX(1)}
+.nav-badge{position:absolute;top:2px;right:calc(50% - 24px);min-width:16px;height:16px;border-radius:99px;background:var(--bad);color:#fff;
+  font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 4px;
+  box-shadow:0 2px 10px rgba(248,113,113,.55);z-index:2}
+
+/* ---- Animated nav icons ---- */
+.nav-ico svg{overflow:visible}
+/* DIG - swinging pickaxe + sparkles */
+.nav-dig .nv-swing{animation:nvSwing 2.2s ease-in-out infinite;transform-origin:14px 22px;transform-box:fill-box}
+.nav-dig .nv-spark1{animation:nvBlink 1.6s ease-in-out infinite;transform-origin:center;transform-box:fill-box}
+.nav-dig .nv-spark2{animation:nvBlink 1.6s ease-in-out infinite .5s;transform-origin:center;transform-box:fill-box}
+/* JOBS - checkmark draw + clip pulse */
+.nav-jobs .nv-check{stroke-dasharray:18;stroke-dashoffset:18;animation:nvDraw 2.8s ease-in-out infinite}
+.nav-jobs .nv-clip{animation:nvPulse 2s ease-in-out infinite;transform-origin:center;transform-box:fill-box}
+/* SHOP - bag bounce + coin spin */
+.nav-shop .nv-bounce{animation:nvBounce 1.8s ease-in-out infinite;transform-origin:14px 24px;transform-box:fill-box}
+.nav-shop .nv-coin{animation:nvSpin 2.5s linear infinite;transform-origin:center;transform-box:fill-box}
+/* CREW - people pulse */
+.nav-crew .nv-p1{animation:nvPulse 2s ease-in-out infinite;transform-origin:10px 11px;transform-box:fill-box}
+.nav-crew .nv-p2{animation:nvPulse 2s ease-in-out infinite .35s;transform-origin:20px 9px;transform-box:fill-box}
+/* MENU - bars wave */
+.nav-menu .nv-bar1{animation:nvWave 1.5s ease-in-out infinite}
+.nav-menu .nv-bar2{animation:nvWave 1.5s ease-in-out infinite .15s}
+.nav-menu .nv-bar3{animation:nvWave 1.5s ease-in-out infinite .3s}
+/* Active button - boost animations */
+.nav-b.on .nav-dig .nv-swing{animation-duration:1.2s}
+.nav-b.on .nav-shop .nv-bounce{animation-duration:1s}
+.nav-b.on .nav-crew .nv-p1{animation-duration:1.2s}
+.nav-b.on .nav-crew .nv-p2{animation-duration:1.2s}
+
+@keyframes nvSwing{0%,100%{transform:rotate(0)}20%{transform:rotate(-18deg)}50%{transform:rotate(8deg)}80%{transform:rotate(-5deg)}}
+@keyframes nvBlink{0%,100%{opacity:0;transform:scale(.3)}40%{opacity:1;transform:scale(1.3)}60%{opacity:1;transform:scale(1)}}
+@keyframes nvDraw{0%{stroke-dashoffset:18}35%{stroke-dashoffset:0}75%{stroke-dashoffset:0}90%,100%{stroke-dashoffset:18}}
+@keyframes nvBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}
+@keyframes nvSpin{to{transform:rotate(360deg)}}
+@keyframes nvPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+@keyframes nvWave{0%,100%{transform:translateX(-1px) scaleX(1)}50%{transform:translateX(1.5px) scaleX(.92)}}
+
+/* ---------- Buttons ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:none;cursor:pointer;
+  font-weight:800;font-size:13.5px;color:#241703;border-radius:14px;padding:12px 18px;position:relative;overflow:hidden;
+  background:linear-gradient(135deg,var(--accent),#ffd98a);
+  box-shadow:0 6px 20px rgba(245,185,66,.28), inset 0 1px 0 rgba(255,255,255,.4);
+  transition:transform .12s ease, filter .2s;
+  white-space:nowrap;min-width:0;max-width:100%;text-overflow:ellipsis}
+.btn span,.btn b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.btn:active{transform:scale(.955)}
+.btn:disabled{filter:grayscale(.8) brightness(.55);pointer-events:none}
+.btn::after{content:'';position:absolute;top:0;left:-70%;width:40%;height:100%;transform:skewX(-20deg);
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.5),transparent);animation:sheen 3.4s ease-in-out infinite}
+.btn.pulse{animation:glowp 2.2s ease-in-out infinite}
+.btn.ghost{background:var(--card2);color:var(--txt);box-shadow:inset 0 0 0 1px var(--line)}
+.btn.ghost::after{display:none}
+.btn.tonb{background:linear-gradient(135deg,#22d3ee,#0ea5e9);color:#032530;box-shadow:0 6px 20px rgba(34,211,238,.3), inset 0 1px 0 rgba(255,255,255,.4)}
+.btn.danger{background:linear-gradient(135deg,#f87171,#dc2626);color:#2b0606;box-shadow:0 6px 18px rgba(220,38,38,.3)}
+.btn.danger::after{display:none}
+.btn.sm{padding:8px 11px;font-size:11.5px;border-radius:11px;gap:5px;min-width:0;max-width:100%;overflow:hidden}
+.btn.sm .ic{width:14px;height:14px}
+.btn.block{width:100%}
+.btn.xs2{padding:6px 10px;font-size:11px;border-radius:10px}
+.qacts{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px}
+.qacts .btn{font-size:11px;padding:8px 6px;gap:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---------- Cards / common ---------- */
+.card{background:linear-gradient(165deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:18px;padding:14px}
+.stitle{display:flex;align-items:center;gap:8px;margin:18px 4px 10px;font-size:11.5px;font-weight:800;letter-spacing:.16em;color:var(--mut);text-transform:uppercase}
+.stitle:before{content:'';width:4px;height:13px;border-radius:2px;background:linear-gradient(var(--accent),var(--accent2))}
+.stitle .st-x{margin-left:auto;letter-spacing:0;text-transform:none;font-size:11px;color:var(--accent2);font-weight:800;cursor:pointer;display:flex;align-items:center;gap:3px}
+.pbar{height:9px;background:#0a0f1c;border-radius:99px;overflow:hidden;border:1px solid rgba(255,255,255,.05)}
+.pbar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:99px;position:relative;transition:width .4s}
+.pbar>i:after{content:'';position:absolute;inset:0;background:linear-gradient(100deg,transparent 25%,rgba(255,255,255,.45) 50%,transparent 75%);background-size:200% 100%;animation:barshine 2.4s linear infinite}
+.tag{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:99px;border:1px solid currentColor}
+.rchip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;color:var(--accent);
+  background:rgba(245,185,66,.09);border:1px solid rgba(245,185,66,.28);padding:2px 8px;border-radius:99px}
+.rchip .ic{width:12px;height:12px}
+.rchip.gemc{color:var(--gem);background:rgba(232,121,249,.09);border-color:rgba(232,121,249,.3)}
+.rchip.tonc{color:var(--accent2);background:rgba(34,211,238,.09);border-color:rgba(34,211,238,.3)}
+.codebox{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;background:#0a101d;border:1px solid var(--line);
+  border-radius:12px;padding:10px;word-break:break-all;color:var(--accent2);line-height:1.5}
+.inp{width:100%;background:#0a101d;border:1px solid var(--line);border-radius:13px;color:var(--txt);
+  padding:12px;font-family:inherit;font-size:14px;font-weight:600;outline:none;transition:border .2s}
+.inp:focus{border-color:var(--accent)}
+.lb{font-size:10.5px;font-weight:800;letter-spacing:.1em;color:var(--mut);text-transform:uppercase;display:block;margin:13px 0 6px}
+.divd{border-bottom:1px dashed rgba(255,255,255,.08)}
+.sw{width:32px;height:32px;border-radius:11px;border:2px solid transparent;cursor:pointer;flex:none}
+.sw.on{border-color:#fff;box-shadow:0 0 0 2px rgba(255,255,255,.2)}
+
+/* ---------- Mine hero ---------- */
+.hero{position:relative;overflow:hidden;padding:16px;border-radius:20px;
+  background:linear-gradient(150deg,#1b2745,#111a30 55%,#16223c);border:1px solid var(--line)}
+.hero:after{content:'';position:absolute;top:0;left:-70%;width:40%;height:100%;transform:skewX(-20deg);
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.06),transparent);animation:sheen 5s ease-in-out infinite}
+.hero .hlab{font-size:10px;font-weight:800;letter-spacing:.18em;color:var(--mut);text-transform:uppercase}
+.hero .hbal{font-size:31px;font-weight:800;display:flex;align-items:center;gap:9px;margin-top:2px;line-height:1.1;min-width:0;max-width:100%;flex-wrap:nowrap}
+.hero .hbal .num{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
+.hero .hbal .ic{width:24px;height:24px}
+.hero .hcur{font-size:12px;color:var(--mut);font-weight:800;letter-spacing:.08em;align-self:flex-end;padding-bottom:5px}
+.hero .hsub{font-size:12px;color:var(--accent2);font-weight:800;margin-top:3px}
+.hero .hxpp{margin-top:11px;display:flex;align-items:center;gap:8px}
+.hero .hxpp .lvb{flex:none;font-size:10.5px;font-weight:800;color:var(--accent2);border:1px solid rgba(34,211,238,.4);
+  padding:3px 8px;border-radius:99px;background:rgba(34,211,238,.08)}
+.hero .hxpp .pbar{flex:1;height:7px}
+.hero .hxpp .xt{font-size:10px;color:var(--mut);font-weight:800;flex:none}
+.mstrip{display:flex;align-items:center;margin-top:12px}
+.mstrip .mav{width:27px;height:27px;border-radius:50%;background:var(--card);border:2px solid var(--bg2);margin-left:-7px;overflow:hidden}
+.mstrip .mav:first-child{margin-left:0}
+.mstrip .mav svg{width:100%;height:100%}
+.mstrip .more-b{margin-left:8px;font-size:10.5px;color:var(--mut);font-weight:800}
+.bchip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;padding:5px 10px;border-radius:99px;
+  background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.35);color:var(--good)}
+.bchip .ic{width:12px;height:12px}
+
+/* ---------- Daily chest ---------- */
+.dchest{display:flex;align-items:center;gap:13px}
+.dchest .cico{width:56px;height:56px;flex:none;filter:drop-shadow(0 6px 16px rgba(245,185,66,.35));animation:floaty 2.6s ease-in-out infinite}
+.dchest .ct{font-weight:800;font-size:14px}
+.dchest .cd{font-size:11.5px;color:var(--mut);margin-top:2px}
+
+/* ---------- Mine scene ---------- */
+.scenecard{padding:10px}
+.schead{display:flex;align-items:center;gap:8px;padding:4px 4px 9px}
+.mapdot{width:12px;height:12px;border-radius:4px;flex:none}
+.schead .mname{font-weight:800;font-size:14px}
+.mchip{font-size:10px;font-weight:800;color:var(--accent2);border:1px solid rgba(34,211,238,.35);border-radius:99px;padding:2px 8px;background:rgba(34,211,238,.07)}
+.scene{width:100%;display:block;border-radius:14px}
+.sc-cart{animation:cartmove 9s ease-in-out infinite alternate}
+.sc-crystal{animation:cpulse 2.6s ease-in-out infinite;transform-origin:center;transform-box:fill-box}
+.sc-spark{animation:flick .5s steps(2,end) infinite;transform-box:fill-box}
+.sc-dust{animation:dustfall 4.5s linear infinite;opacity:0;transform-box:fill-box}
+.sc-lamp{animation:lampsway 5s ease-in-out infinite;transform-origin:top center;transform-box:fill-box}
+.sc-orb{animation:orb 7s linear infinite;transform-origin:center;transform-box:fill-box}
+.feed{display:flex;gap:7px;overflow:hidden;padding:8px 2px 2px;min-height:30px}
+.lchip{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:800;padding:4px 9px;border-radius:99px;
+  background:var(--card2);border:1px solid var(--line);animation:slidein .35s cubic-bezier(.34,1.56,.64,1);white-space:nowrap;flex:none}
+.lchip .ld{width:7px;height:7px;border-radius:2.5px}
+
+/* ---------- Fields grid ---------- */
+.fgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+.field{position:relative;aspect-ratio:1/1.14;display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+  padding:9px 6px 8px;cursor:pointer;border-radius:16px;overflow:hidden;
+  background:linear-gradient(170deg,var(--card),var(--card2));border:1px solid var(--line);transition:transform .14s}
+.field:active{transform:scale(.95)}
+.field .fav{width:44px;height:44px}
+.field .fn{font-size:10px;font-weight:800;text-align:center;line-height:1.2;color:var(--txt)}
+.field .fbarw{width:100%}
+.field .fbarw .pbar{height:6px}
+.field.emptyf{border-style:dashed;border-color:#2b3b5a}
+.field.emptyf .plusw{width:42px;height:42px;border-radius:14px;background:rgba(34,211,238,.07);border:1px dashed rgba(34,211,238,.4);
+  display:flex;align-items:center;justify-content:center;color:var(--accent2)}
+.f-vein{display:flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;width:100%}
+.f-vein .ld{width:7px;height:7px;border-radius:2.5px;flex:none}
+.f-vein .fvt{flex:1;text-align:left;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rate-chip{position:absolute;top:5px;right:5px;font-size:8.5px;font-weight:800;color:var(--accent2);
+  background:rgba(8,12,22,.72);padding:2px 6px;border-radius:99px;border:1px solid rgba(255,255,255,.06)}
+.field.locked{cursor:default}
+.field.locked .lockov{position:absolute;inset:0;display:flex;flex-direction:column;gap:5px;align-items:center;justify-content:center;
+  background:rgba(7,10,18,.78);backdrop-filter:blur(2px);font-size:10px;font-weight:800;color:var(--mut)}
+.field.locked .lockov .ic{width:16px;height:16px}
+.float-ore{position:absolute;left:50%;top:36%;font-size:12.5px;font-weight:800;color:var(--accent);
+  text-shadow:0 2px 10px rgba(0,0,0,.7);animation:floatup 1.4s ease-out forwards;pointer-events:none;z-index:5}
+.fresp{display:flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;color:var(--mut)}
+.fresp .ic{width:11px;height:11px}
+
+/* ---------- Tasks ---------- */
+.tcard{display:flex;align-items:center;gap:12px;padding:12px;margin-bottom:10px}
+.ticon{width:46px;height:46px;flex:none;border-radius:14px;display:flex;align-items:center;justify-content:center;
+  background:rgba(34,211,238,.08);border:1px solid var(--line);color:var(--accent2)}
+.ticon .ic{width:21px;height:21px}
+.tmain{flex:1;min-width:0}
+.tt{font-weight:800;font-size:13.5px;line-height:1.2}
+.td{font-size:11.5px;color:var(--mut);margin-top:2px;line-height:1.35}
+.trew{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap}
+.tside{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none}
+
+/* ---------- Friends ---------- */
+.fhero{position:relative;overflow:hidden;text-align:center;padding:22px 16px;border-radius:20px;
+  background:linear-gradient(160deg,#1c2a4a,#111a30 70%);border:1px solid var(--line)}
+.fhero .fico{width:64px;height:64px;margin:0 auto 10px;color:var(--accent);animation:floaty 3s ease-in-out infinite}
+.fhero .ft{font-size:18px;font-weight:800}
+.fhero .fd{font-size:12px;color:var(--mut);margin-top:5px;line-height:1.5}
+.refbox{display:flex;gap:8px;margin-top:12px}
+.refbox>.btn{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:8px 10px;font-size:11.5px}
+.fstat{flex:1;text-align:center;padding:12px 6px}
+.fstat b{font-size:18px;display:block}
+.fstat span{font-size:9.5px;color:var(--mut);font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+
+/* ---------- Store ---------- */
+.tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;padding:8px 15px;border-radius:99px;background:var(--card);border:1px solid var(--line);color:var(--mut);
+  font-weight:800;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px;transition:all .2s}
+.tab .ic{width:14px;height:14px}
+.tab.on{color:#241703;background:linear-gradient(135deg,var(--accent),#ffd98a);border-color:transparent}
+.sgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.scard{padding:12px;display:flex;flex-direction:column;gap:8px;position:relative;overflow:hidden}
+.scard .sico{width:54px;height:54px;border-radius:16px;overflow:visible;
+  background:radial-gradient(circle at 30% 22%, rgba(255,255,255,.09), transparent 62%),var(--card2);
+  border:1px solid var(--line);display:flex;align-items:center;justify-content:center}
+.scard .sico svg{width:40px;height:40px}
+.scard .bn{font-weight:800;font-size:12.5px;line-height:1.2}
+.scard .own{position:absolute;top:10px;right:10px;font-size:9.5px;font-weight:800;color:var(--mut);
+  border:1px solid var(--line);border-radius:99px;padding:2px 7px;background:rgba(10,16,29,.7)}
+.pchips{display:flex;flex-direction:column;gap:4px}
+.pchip{font-size:11px;font-weight:800;display:flex;gap:5px;align-items:center;color:var(--txt)}
+.pchip .ic{width:13px;height:13px}
+
+/* ---------- More ---------- */
+.pmini{display:flex;align-items:center;gap:12px;cursor:pointer}
+.avatar{width:56px;height:56px;border-radius:50%;border:2px solid var(--accent);object-fit:cover;background:var(--card2);flex:none}
+.pmini .pn{font-weight:800;font-size:15.5px}
+.pmini .pu{font-size:11.5px;color:var(--mut);font-weight:700;margin-top:1px}
+.lvbadge{margin-left:auto;flex:none;text-align:center;background:rgba(34,211,238,.08);border:1px solid rgba(34,211,238,.4);
+  color:var(--accent2);border-radius:14px;padding:6px 10px}
+.lvbadge b{font-size:16px;display:block;line-height:1}
+.lvbadge span{font-size:8.5px;font-weight:800;letter-spacing:.1em}
+.mrow{display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:16px;
+  background:linear-gradient(160deg,var(--card),var(--card2));border:1px solid var(--line);margin-bottom:9px;cursor:pointer;transition:transform .12s}
+.mrow:active{transform:scale(.977)}
+.mico{width:40px;height:40px;flex:none;border-radius:13px;display:flex;align-items:center;justify-content:center;
+  background:rgba(245,185,66,.09);color:var(--accent);border:1px solid var(--line)}
+.mico.cy{background:rgba(34,211,238,.09);color:var(--accent2)}
+.mico.gr{background:rgba(52,211,153,.09);color:var(--good)}
+.mico.rd{background:rgba(248,113,113,.09);color:var(--bad)}
+.mico .ic{width:19px;height:19px}
+.mrow .mt2{flex:1;min-width:0}
+.mrow .mt2 b{font-size:13.5px;font-weight:800;display:block}
+.mrow .mt2 span{font-size:11px;color:var(--mut);font-weight:600;margin-top:1px;display:block}
+.mrow .chev{color:var(--mut);flex:none}
+
+/* ---------- Pages (full overlay) ---------- */
+#pageRoot .page{position:absolute;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column;
+  overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+  padding:calc(var(--safe-t) + var(--tb-h) + 10px) 14px calc(var(--safe-b) + 26px);
+  transform:translateX(26px);opacity:0;pointer-events:none;transition:transform .28s cubic-bezier(.3,1,.4,1),opacity .28s}
+#pageRoot .page::-webkit-scrollbar{display:none}
+#pageRoot .page.open{transform:none;opacity:1;pointer-events:auto}
+.page-h{display:flex;align-items:center;gap:11px;padding:calc(var(--safe-t) + 12px) 14px 12px;
+  border-bottom:1px solid var(--line);background:rgba(11,15,26,.85);backdrop-filter:blur(14px)}
+.page-h .backb{width:36px;height:36px;border-radius:12px;background:var(--card);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;color:var(--txt);cursor:pointer;flex:none}
+.page-h .backb:active{transform:scale(.92)}
+.page-h .pt{font-weight:800;font-size:16px}
+.page-c{flex:1;overflow-y:auto;padding:14px 14px calc(var(--safe-b) + 26px);scrollbar-width:none}
+.page-c::-webkit-scrollbar{display:none}
+
+/* ---------- Sheets ---------- */
+.sh-wrap{position:absolute;inset:0;z-index:70;display:flex;align-items:flex-end;justify-content:center}
+.sh-bd{position:absolute;inset:0;background:rgba(4,7,14,.62);backdrop-filter:blur(4px);opacity:0;transition:opacity .25s}
+.sheet{position:relative;width:100%;max-height:88%;overflow-y:auto;scrollbar-width:none;
+  background:linear-gradient(180deg,#182338,var(--card));border-radius:22px 22px 0 0;border:1px solid var(--line);border-bottom:none;
+  padding:10px 16px calc(var(--safe-b) + 20px);transform:translateY(100%);transition:transform .3s cubic-bezier(.3,1,.4,1)}
+.sheet::-webkit-scrollbar{display:none}
+.sh-wrap.open .sh-bd{opacity:1}
+.sh-wrap.open .sheet{transform:none}
+.sheet .grab{width:44px;height:4px;border-radius:99px;background:var(--line);margin:4px auto 14px}
+.sheet .sh-t{font-weight:800;font-size:16px;margin-bottom:4px}
+
+/* ---------- Modals / confirm ---------- */
+.md-wrap{position:absolute;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:24px}
+.md-wrap .sh-bd{z-index:0}
+.md{position:relative;width:100%;max-width:350px;background:linear-gradient(170deg,#172135,var(--card));
+  border:1px solid var(--line);border-radius:22px;padding:20px;transform:scale(.9);opacity:0;
+  transition:.25s cubic-bezier(.34,1.56,.64,1)}
+.md-wrap.open .md{transform:none;opacity:1}
+
+/* ---------- Payment methods ---------- */
+.pm{display:flex;gap:10px;align-items:center;padding:12px;border-radius:14px;border:1px solid var(--line);
+  background:var(--card);margin-bottom:8px;cursor:pointer;transition:all .15s}
+.pm.on{border-color:var(--accent);background:linear-gradient(160deg,rgba(245,185,66,.08),var(--card))}
+.pm .pico{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+  background:var(--card2);color:var(--accent2);flex:none}
+.pm .pt2{font-weight:800;font-size:13px}
+.pm .pd{font-size:10.5px;color:var(--mut);margin-top:1px}
+.pm .radio{width:17px;height:17px;border-radius:50%;border:2px solid var(--line);margin-left:auto;flex:none;transition:all .15s}
+.pm.on .radio{border-color:var(--accent);background:radial-gradient(circle,var(--accent) 42%,transparent 48%)}
+
+/* ---------- Wallet ---------- */
+.wrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:11px 2px;font-size:13px}
+.wrow b{font-weight:800}
+.wtag{font-size:9.5px;font-weight:800;padding:3px 9px;border-radius:99px;border:1px solid;letter-spacing:.06em;text-transform:uppercase}
+.st-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.st-tile{padding:11px 6px;text-align:center}
+.st-tile b{font-size:14.5px;display:block}
+.st-tile span{font-size:8.5px;color:var(--mut);font-weight:800;letter-spacing:.07em;text-transform:uppercase}
+
+/* ---------- Swap ---------- */
+.swap-dir{display:grid;grid-template-columns:1fr 1fr;gap:7px;background:#0a101d;border:1px solid var(--line);border-radius:14px;padding:5px}
+.sdir{border:none;background:none;color:var(--mut);font-weight:800;font-size:11.5px;padding:9px 4px;border-radius:10px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:5px;min-width:0;transition:all .18s}
+.sdir .ic{width:13px;height:13px;flex:none}
+.sdir span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sdir.on{background:linear-gradient(135deg,var(--accent),#ffd98a);color:#241703}
+
+/* ---------- Settings ---------- */
+.tg-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 2px;border-bottom:1px dashed rgba(255,255,255,.07)}
+.tg-row .tt2{font-weight:800;font-size:13.5px}
+.tg-row .td2{font-size:11px;color:var(--mut);margin-top:2px}
+.switch{width:46px;height:26px;border-radius:99px;background:#222e4a;position:relative;cursor:pointer;transition:background .2s;flex:none;border:1px solid var(--line)}
+.switch:after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#8b98ad;transition:.2s}
+.switch.on{background:linear-gradient(90deg,var(--accent),var(--accent2));border-color:transparent}
+.switch.on:after{left:22px;background:#fff}
+
+/* ---------- Profile / achievements ---------- */
+.pcard{position:relative;overflow:hidden;padding:16px;border-radius:20px;background:linear-gradient(140deg,#1b2745,#121a2e);border:1px solid var(--line)}
+.lvring{width:74px;height:74px;border-radius:50%;background:conic-gradient(var(--accent) calc(var(--p,0)*1%),#223047 0);
+  display:flex;align-items:center;justify-content:center;flex:none}
+.lvring>div{width:58px;height:58px;border-radius:50%;background:#141d31;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.lvring b{font-size:17px;line-height:1}
+.lvring span{font-size:7.5px;font-weight:800;letter-spacing:.14em;color:var(--mut)}
+.agrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.ach{padding:10px 4px;text-align:center;position:relative}
+.ach .ic{width:20px;height:20px;margin:0 auto}
+.ach b{font-size:9px;display:block;margin-top:5px;font-weight:800;line-height:1.2}
+.ach.lock{opacity:.38}
+.ach.un{border-color:rgba(245,185,66,.45);box-shadow:0 0 14px rgba(245,185,66,.1)}
+
+/* ---------- Toasts / FX ---------- */
+#toasts{position:absolute;top:calc(var(--safe-t) + var(--tb-h) + 6px);left:0;right:0;z-index:90;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+.toast{display:flex;align-items:center;gap:8px;background:rgba(18,26,44,.96);border:1px solid var(--line);
+  padding:10px 15px;border-radius:14px;font-size:12.5px;font-weight:800;box-shadow:0 12px 34px rgba(0,0,0,.5);
+  animation:toastin .32s cubic-bezier(.34,1.56,.64,1);max-width:86%;pointer-events:auto}
+.toast.out{animation:toastout .3s forwards}
+.toast .ic{width:15px;height:15px;flex:none}
+.toast.ok .ic{color:var(--good)} .toast.err .ic{color:var(--bad)} .toast.info .ic{color:var(--accent2)} .toast.gold .ic{color:var(--accent)}
+#fx{position:absolute;inset:0;z-index:95;pointer-events:none}
+
+/* ---------- Miners (animated avatar) ---------- */
+.m-bob{animation:bob 2.3s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.pick-sw{animation:swing 1.15s ease-in-out infinite;transform-box:fill-box;transform-origin:12% 88%}
+.chest-g{animation:chestg 2.2s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+
+/* ---------- Keyframes ---------- */
+@keyframes sheen{0%,55%{left:-70%}100%{left:135%}}
+@keyframes barshine{from{background-position:200% 0}to{background-position:-200% 0}}
+@keyframes loadslide{0%{transform:translateX(-130%)}100%{transform:translateX(330%)}}
+@keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes fadein{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+@keyframes slidein{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+@keyframes toastin{from{opacity:0;transform:translateY(-14px) scale(.94)}}
+@keyframes toastout{to{opacity:0;transform:translateY(-10px) scale(.94)}}
+@keyframes floatup{0%{opacity:0;transform:translate(-50%,8px) scale(.8)}18%{opacity:1}100%{opacity:0;transform:translate(-50%,-36px) scale(1.06)}}
+@keyframes pop{0%{transform:scale(1)}45%{transform:scale(1.22)}100%{transform:scale(1)}}
+@keyframes glowp{0%,100%{box-shadow:0 6px 18px rgba(245,185,66,.25)}50%{box-shadow:0 6px 30px rgba(245,185,66,.55)}}
+@keyframes drift{0%{transform:translateY(108vh) scale(.6);opacity:0}12%{opacity:.75}85%{opacity:.35}100%{transform:translateY(-6vh) scale(1.05);opacity:0}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-2.5px)}}
+@keyframes swing{0%,100%{transform:rotate(10deg)}50%{transform:rotate(-30deg)}}
+@keyframes chestg{0%,100%{transform:scale(1);filter:drop-shadow(0 0 4px rgba(245,185,66,.4))}50%{transform:scale(1.05);filter:drop-shadow(0 0 14px rgba(245,185,66,.8))}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+@keyframes cartmove{from{transform:translateX(14px)}to{transform:translateX(196px)}}
+@keyframes cpulse{0%,100%{opacity:.6;transform:scale(.93)}50%{opacity:1;transform:scale(1.07)}}
+@keyframes flick{0%{opacity:0}50%{opacity:1}100%{opacity:.15}}
+@keyframes dustfall{0%{transform:translateY(-8px);opacity:0}18%{opacity:.75}100%{transform:translateY(48px);opacity:0}}
+@keyframes lampsway{0%,100%{transform:rotate(-4deg)}50%{transform:rotate(4deg)}}
+@keyframes orb{to{transform:rotate(360deg)}}
+
+@media(max-width:368px){
+  .tb-bv{font-size:12px}.tb-bic{width:16px;height:16px}.tb-bic .ic{width:11px;height:11px}
+  .tb-bal{padding:5px 11px;gap:5px}.tb-bc{font-size:8px;letter-spacing:.08em}
+  .nav-b{font-size:8.5px}.nav-b .lb{font-size:8.5px}.nav-b .nav-ico{width:23px;height:23px}.fgrid{gap:7px}
+  .hero .hbal{font-size:24px}.hero .hbal .ic{width:20px;height:20px}
+  .btn.sm{font-size:10.5px;padding:7px 8px}
+  .refbox>.btn{font-size:10.5px;padding:7px 8px}
+  .qacts .btn{font-size:10px;padding:7px 4px}
+}
+body.reduce *,body.reduce *:before,body.reduce *:after{animation:none!important;transition:none!important}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+</style>
+</head>
+<body>
+<div id="appwrap">
+  <div id="bgfx"></div>
+
+  <div id="splash">
+    <div class="slogo" id="splashLogo"></div>
+    <div class="sname" id="splashName">DEEPSHAFT</div>
+    <div class="stag" id="splashTag">IDLE MINING EMPIRE</div>
+    <div class="sbar"><i></i></div>
+  </div>
+
+  <header id="topbar">
+    <div class="tb-row1">
+      <div class="tb-bal" data-act="open-page" data-p="wallet">
+        <span class="tb-bic" id="tbOreIc"></span>
+        <span class="tb-bv num" id="tbOre">0</span>
+        <span class="tb-bc" id="tbOreCur">ORE</span>
+      </div>
+      <button class="tb-wallet" id="tbWallet" data-act="open-page" data-p="wallet" aria-label="Open wallet">
+        <span id="tbWalletIc"></span>
+        <i class="tb-dot" id="tbWdot"></i>
+      </button>
+    </div>
+    <div class="tb-row2">
+      <span class="tb-pill gem" id="tbGem"></span>
+      <span class="tb-pill lvl" id="tbLvl"></span>
+      <span class="tb-pill rate" id="tbRate"></span>
+    </div>
+  </header>
+
+  <main id="view"></main>
+  <nav id="nav"></nav>
+  <div id="pageRoot"></div>
+  <div id="sheetRoot"></div>
+  <div id="modalRoot"></div>
+  <div id="toasts"></div>
+  <canvas id="fx"></canvas>
+</div>
+<script type="module">
+/* ====================== FIREBASE REALTIME DATABASE INIT ======================
+   All user data is synced to Firebase Realtime Database using the Telegram
+   user ID as the key. This ensures data persists across device changes,
+   Telegram app reinstalls, or clearing browser data - the user's progress
+   is always recoverable via their Telegram ID.
+   Database path: users/{tg_userId}/state  -> full game state JSON
+                   users/{tg_userId}/profile -> name, username, photo, level
+                   users/{tg_userId}/lastSeen -> timestamp
+   ============================================================================== */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-app.js";
+import { getDatabase, ref, set, get, onValue, update, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-database.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-analytics.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyA2Ku-RIMgs37TLFO_aU6K88EQmUXpRrWI",
+  authDomain: "deep-shaft.firebaseapp.com",
+  databaseURL: "https://deep-shaft-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "deep-shaft",
+  storageBucket: "deep-shaft.firebasestorage.app",
+  messagingSenderId: "172565666879",
+  appId: "1:172565666879:web:8cca80ca07b2eef7846c8a",
+  measurementId: "G-DTKLJY64FG"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+try { getAnalytics(fbApp); } catch(e) {}
+const fbDb = getDatabase(fbApp);
+
+window.FB = { db: fbDb, ref, set, get, onValue, update, serverTimestamp, onDisconnect, ready: true };
+window.dispatchEvent(new Event('firebase-ready'));
+</script>
+<script>
+'use strict';
+/* ================================================================================================
+   CONTROL PANEL CONTRACT (for control.html - same origin)
+   ------------------------------------------------------------------------------------------------
+   Everything in this Mini App is controlled through localStorage keys below. Both files must be
+   hosted on the SAME origin (same domain), then control.html can fully drive this app.
+
+   STORAGE KEYS
+     cp_config JSON object, deep-merged over DEFAULT_CONFIG. Any field you set overrides the
+                     default: app name/tagline/logo, ui colors/toggles/nav order, currencies, mining
+                     numbers (fields, rates, boosts), maps, miners (characters), gear, tasks, gems
+                     packs, payment settings (TON Connect manifest, direct address, manual text),
+                     withdrawal rules and page texts. Arrays are replaced wholesale, so you can
+                     replace the whole tasks/miners/maps lists from the panel.
+     cp_state Game save JSON (ore, gems, xp, level, miners, gear, tasks progress...).
+                     Edit it to grant balances or levels. The app re-reads it when the key changes.
+     cp_inbox ARRAY of commands consumed by the app on boot and whenever the key changes:
+                       [{ "cmd":"grant", "ore":1000, "gems":5, "xp":200 },
+                        { "cmd":"notify", "title":"Update", "msg":"New map available" },
+                        { "cmd":"reset" }]
+     cp_payments ARRAY written by the app on every purchase/checkout:
+                       { id, ts, userId, userName, kind, item, method, amountTon, status, txHash }
+                     status: "pending" | "paid". Flip to "paid" after manual verification.
+     cp_withdrawals ARRAY written by the app on ORE withdrawal requests:
+                       { id, ts, userId, userName, address, amountOre, fee, amountTon, status }
+     cp_events ARRAY activity log for dashboards (purchases, withdrawals, tasks, joins, swaps).
+
+   KEY cp_config SECTIONS (all optional - deep merged over defaults):
+     app name, tagline, logoUrl, botUsername, supportUrl
+     ui accent, accent2, fullscreen, backButtonExit, splashMinMs,
+                    navOrder ['mine','tasks','store','friends','more'],
+                    navLabels { mine:'Mine', tasks:'Tasks', ... } <- bottom nav texts
+     currency ore { name, start }, gem { name, start, enabled }
+     economy orePerTon, xpPerOre, withdraw {...}, deposit {...}
+     swap { enabled, feePercent, oreToGem:{enabled,rate}, gemToOre:{enabled,rate},
+                    minOre, minGem } <- wallet instant swap (ORE <-> GEM)
+     mining fields, rates, boosts [...]
+     maps/miners/gear/tasks/daily/friends/gemPacks
+     payments tonconnect { enabled, manifestUrl, showBalance }
+                    manifestUrl empty or "your-domain.com" => auto <origin>/tonconnect-manifest.json
+                    direct { address, comment }, manual { instructions, requireTxHash, contactUrl }
+     Pages about, terms
+
+   LIVE RELOAD After writing a key from control.html, notify the app (any of these works):
+                   new BroadcastChannel('cp_channel').postMessage('config')
+                   window.dispatchEvent(new Event('cp-push')) // same window
+                   localStorage.setItem('cp_inbox', ...) // storage event, other tab
+
+   window.MiniAppAPI (callable from control.html when opened via window.open / iframe same origin):
+                   getConfig(), setConfig(partialObj), getState(), grant({ore,gems,xp}),
+                   notify(title,msg), addTask(task), removeTask(id), resetApp(), openScreen(name)
+   ================================================================================================ */
+
+/* ================================ 1. DEFAULT CONFIG ================================ */
+/* Generate 60+ miners with TON prices starting from 1 TON.
+   Free starter miner is first - gives 0.01 gram/day when activated.
+   Each miner has a unique ID used as TON transaction comment: {minerId}_{userId} */
+function genDefaultMiners(){
+  const names = [
+    'Stone Breaker','Copper Claw','Coal Driller','Iron Picker','Bronze Smasher','Tin Scratcher','Quartz Chipper','Granite Grinder','Slate Splitter','Obsidian Ore',
+    'Shadow Digger','Frost Hammer','Ember Excavator','Storm Breaker','Void Claw','Crystal Miner','Magma Driller','Thunder Pick','Ice Crusher','Flame Digger',
+    'Gold Rusher','Diamond Drill','Platinum Pro','Titanium Titan','Cobalt Crusher','Nickel Noble','Jade Jaw','Ruby Rocker','Sapphire Smasher','Emerald Excavator',
+    'Topaz Tunneler','Amethyst Annihilator','Dragon Digger','Phoenix Picker','Kraken Crusher','Hydra Hammer','Griffin Grabber','Unicorn Uprooter','Basilisk Breaker','Chimera Chipper',
+    'Wyrm Whacker','Golem Grinder','Titan Tunneler','Colossus Crusher','Leviathan Lithifier','Behemoth Breaker','Celestial Digger','Astral Excavator','Cosmic Crusher','Nebula Noble',
+    'Galaxy Grabber','Stellar Smasher','Void Voyager','Quantum Quarry','Infinite Iron','Eternal Excavator','Primal Pick','Genesis Grinder','Omega Ore','Apex Annihilator'
+  ];
+  const tiers = [
+    { rarity:'common', count:10, basePrice:1, priceStep:0.5, basePower:3, powerStep:3, prefix:'c' },
+    { rarity:'uncommon', count:10, basePrice:6, priceStep:1, basePower:45, powerStep:12, prefix:'u' },
+    { rarity:'rare', count:13, basePrice:16, priceStep:2, basePower:183, powerStep:26, prefix:'r' },
+    { rarity:'epic', count:14, basePrice:42, priceStep:3, basePower:508, powerStep:45, prefix:'e' },
+    { rarity:'legendary', count:13, basePrice:85, priceStep:5, basePower:1050, powerStep:120, prefix:'l' }
+  ];
+  const miners = [];
+  // Free starter miner - power calibrated to mine ~0.01 TON worth per 24h naturally
+  // 0.01 TON * 20000 ore/TON = 200 ore/day. 200/86400 = 0.00231 ore/sec
+  miners.push({ id:'mn_free_starter', name:'Free Starter Miner', rarity:'common', power:0.0023, costOre:0, costGem:0, costTon:0, free:true, noUpgrade:true, enabled:true });
+  let ni = 0;
+  tiers.forEach(t => {
+    for (let i = 0; i < t.count; i++){
+      const price = t.basePrice + i * t.priceStep;
+      const power = t.basePower + i * t.powerStep;
+      miners.push({
+        id: 'mn_' + t.prefix + '_' + (i+1), name: names[ni++] || (t.rarity + ' #' + (i+1)),
+        rarity: t.rarity, power: Math.round(power * 10) / 10, costOre: 0, costGem: 0, costTon: price, enabled: true
+      });
+    }
+  });
+  return miners;
+}
+
+const DEFAULT_CONFIG = {
+  version: 1,
+  app: {
+    name: 'DEEPSHAFT',
+    tagline: 'Idle Mining Empire',
+    logoUrl: '', // optional external logo image URL
+    botUsername: 'deepshaft_bot', // used for referral links (control panel)
+    supportUrl: 'https://t.me/deepshaft_support'
+  },
+  ui: {
+    accent: '#f5b942',
+    accent2: '#22d3ee',
+    fullscreen: true, // request Telegram fullscreen
+    backButtonExit: true, // native back button exits app on root screen
+    splashMinMs: 1100,
+    navOrder: ['mine','tasks','store','friends','more'],
+    navLabels: { mine:'DIG', tasks:'JOBS', store:'SHOP', friends:'CREW', more:'MENU' }
+  },
+  currency: {
+    ore: { name: 'ORE', start: 0 },
+    gem: { name: 'GEM', start: 8, enabled: true }
+  },
+  economy: {
+    orePerTon: 20000, // display conversion rate
+    xpPerOre: 0.05,
+    withdraw: {
+      enabled: true, minOre: 40000, feePercent: 5, processing: '24-72h',
+      instructions: 'Withdrawals are reviewed by the team and paid in TON to your wallet.'
+    },
+    deposit: { enabled: true, address: 'UQDd2k2Paxkog0xBfbTKAwpBGcaLpSDehAbc5CoxV8S1cG1H' }
+  },
+  swap: {
+    enabled: true, feePercent: 2,
+    oreToGem: { enabled: true, rate: 5000 }, // 5000 ORE -> 1 GEM
+    gemToOre: { enabled: true, rate: 4200 }, // 1 GEM -> 4200 ORE
+    minOre: 500, minGem: 1
+  },
+  earnings: {
+    tonOnlyPurchases: true,       // ALL purchases require TON - no ore/gem buying
+    dailyGramReward: 0.01,         // Free 0.01 gram (TON) worth of ore every 24h
+    purchaseBoostPercent: 5,       // Each TON purchase gives +5% mining speed boost
+    purchaseBoostDays: 30,         // Boost lasts 30 days
+    refundAfterExpiry: true,       // Refund TON to user balance after boost expires
+    refundWithdrawalEnabled: true,  // Users can withdraw refunded TON
+    enabled: true                  // Master switch - disable to turn off all earnings features
+  },
+  mining: {
+    fields: 6, fieldReqLevel: 1, fieldLevelStep: 2,
+    tickMs: 1000,
+    offlineHoursCap: 8, offlineEfficiency: 0.6,
+    veinHPBase: 55, veinValueBase: 42,
+    gemDropChance: 0.06, gemDropAmount: [1, 2],
+    respawnMin: 6, respawnMax: 16,
+    upgradePowerStep: 0.22, upgradeCostMult: 1.35,
+    boosts: [
+      { id:'boost_x2', name:'Drill Overdrive', desc:'Doubles mining speed', mult:2, minutes:30, priceGem:10, priceTon:0.25, enabled:true },
+      { id:'boost_x3', name:'Magma Reactor', desc:'Triples mining speed', mult:3, minutes:60, priceGem:25, priceTon:0.6, enabled:true }
+    ]
+  },
+  maps: [
+    { id:'m1', name:'Verdant Hollow', sub:'Starter shaft', mult:1, hpMult:1, reqLevel:1, costOre:0, loots:['stone','coal','copper'], theme:{sky1:'#14351f',sky2:'#0b1f14',rock:'#25402f',crystal:'#4ade80'}, enabled:true },
+    { id:'m2', name:'Ember Depths', sub:'Warm veins', mult:1.6, hpMult:1.5, reqLevel:6, costOre:6000, loots:['coal','copper','iron','amber'], theme:{sky1:'#3c1d10',sky2:'#200e07',rock:'#4c2c1b',crystal:'#fb923c'}, enabled:true },
+    { id:'m3', name:'Frostbite Shaft', sub:'Frozen ore', mult:2.4, hpMult:2.2, reqLevel:14, costOre:25000, loots:['iron','silver','frost'], theme:{sky1:'#123240',sky2:'#0a1a26',rock:'#25465d',crystal:'#67e8f9'}, enabled:true },
+    { id:'m4', name:'Crystal Abyss', sub:'Gem rich', mult:3.6, hpMult:3.4, reqLevel:24, costOre:90000, loots:['silver','gold','amethyst'], theme:{sky1:'#2c1d4e',sky2:'#150e29',rock:'#3b2d67',crystal:'#a78bfa'}, enabled:true },
+    { id:'m5', name:'Magma Core', sub:'Molten gold', mult:5.5, hpMult:5, reqLevel:36, costOre:260000, loots:['gold','ruby','magma'], theme:{sky1:'#4a1010',sky2:'#260606',rock:'#6b2020',crystal:'#f87171'}, enabled:true },
+    { id:'m6', name:'Void Rift', sub:'Beyond reality', mult:9, hpMult:8, reqLevel:50, costOre:750000, loots:['diamond','void'], theme:{sky1:'#1a1035',sky2:'#0a0618',rock:'#2d2050',crystal:'#e879f9'}, enabled:true }
+  ],
+  miners: genDefaultMiners(),
+  tasks: [],
+  gear: [
+    { id:'g1', slot:'pickaxe', name:'Copper Pickaxe', desc:'+10% mining speed', bonus:0.10, costOre:1200, costGem:0, costTon:0.06, enabled:true },
+    { id:'g2', slot:'pickaxe', name:'Steel Pickaxe', desc:'+25% mining speed', bonus:0.25, costOre:20000, costGem:3, costTon:1, enabled:true },
+    { id:'g3', slot:'pickaxe', name:'Mythril Pickaxe', desc:'+60% mining speed', bonus:0.60, costOre:180000, costGem:10, costTon:9, enabled:true },
+    { id:'g4', slot:'lamp', name:'Oiled Lantern', desc:'+2h offline mining', offlineHours:2, costOre:8000, costGem:0, costTon:0.4, enabled:true },
+    { id:'g5', slot:'lamp', name:'Arc Lamp', desc:'+4h offline mining', offlineHours:4, costOre:120000,costGem:8, costTon:6, enabled:true },
+    { id:'g6', slot:'cart', name:'Reinforced Cart', desc:'+15% loot value', bonusLoot:0.15, costOre:30000, costGem:2, costTon:1.5, enabled:true },
+    { id:'g7', slot:'cart', name:'Ore Hauler', desc:'+35% loot value', bonusLoot:0.35, costOre:250000,costGem:12, costTon:12.5, enabled:true }
+  ],
+  tasksCfg: { verifySec: 10 },
+  daily: { baseOre: 600, baseGem: 2, streakStep: 0.25, streakCapMult: 3 },
+  friends: {
+    enabled: true, bonusOre: 2000, bonusGem: 3, commissionPercent: 5,
+    desc: 'Invite miners and earn a share of everything your crew digs up.'
+  },
+  gemPacks: [
+    { id:'gp1', gems:20, priceTon:0.2, label:'Starter Pouch', bonusPercent:0, enabled:true },
+    { id:'gp2', gems:60, priceTon:0.5, label:'Miner Crate', bonusPercent:10, enabled:true },
+    { id:'gp3', gems:150, priceTon:1.1, label:'Vault Barrel', bonusPercent:20, enabled:true },
+    { id:'gp4', gems:400, priceTon:2.5, label:'Royal Haul', bonusPercent:30, enabled:true }
+  ],
+  payments: {
+    tonconnect: { enabled:true, manifestUrl:'', showBalance:true }, // manifestUrl empty => auto <origin>/tonconnect-manifest.json
+    direct: { enabled:true, address:'UQDd2k2Paxkog0xBfbTKAwpBGcaLpSDehAbc5CoxV8S1cG1H', comment:'DeepShaft purchase' },
+    manual: { enabled:true, requireTxHash:true,
+      instructions:'Send the exact amount in TON to the project address, then paste your transaction hash below. The team verifies payments within a few hours.',
+      contactUrl:'https://t.me/deepshaft_support' }
+  },
+  pages: {
+    about: 'DEEPSHAFT is an idle mining mini app. Hire miners, assign them to dig sites, break ore veins, collect loot and grow your shaft deeper and richer.',
+    terms: 'In-app purchases are final once delivered. Withdrawals are processed manually after review. One account per user.'
+  }
+};
+
+/* ================================ 2. UTILS ================================== */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmt(n){
+  n = Number(n) || 0;
+  if (Math.abs(n) < 1000) return (Math.round(n*10)/10).toString();
+  const u = ['K','M','B','T','Qa']; let i = -1;
+  while (Math.abs(n) >= 1000 && i < u.length-1){ n /= 1000; i++; }
+  return (Math.abs(n) >= 100 ? Math.round(n) : Math.round(n*100)/100) + u[i];
+}
+function fmtTon(n){ return (Math.round((Number(n)||0)*1000)/1000).toString(); }
+function shortAddr(a){ a = a||''; return a.length > 14 ? a.slice(0,6)+'...'+a.slice(-4) : a; }
+function rnd(a,b){ return a + Math.random()*(b-a); }
+function ri(a,b){ return Math.floor(rnd(a, b+1)); }
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+function durTxt(ms){
+  ms = Math.max(0, ms);
+  const s = Math.floor(ms/1000), h = Math.floor(s/3600), m = Math.floor((s%3600)/60);
+  if (h > 0) return h+'h '+m+'m';
+  if (m > 0) return m+'m '+(s%60)+'s';
+  return s+'s';
+}
+function deepMerge(base, over){
+  if (over === undefined || over === null) return base;
+  if (Array.isArray(over)) return JSON.parse(JSON.stringify(over));
+  if (typeof over === 'object' && typeof base === 'object' && base !== null && !Array.isArray(base)){
+    const out = { ...base };
+    for (const k in over) out[k] = deepMerge(base[k], over[k]);
+    return out;
+  }
+  return over;
+}
+const LS = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){} },
+  raw(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+};
+function copyText(t, msg){
+  const done = () => toast(msg || 'Copied to clipboard', 'ok', 'copy');
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(done).catch(() => fallbackCopy(t, done));
+  } else fallbackCopy(t, done);
+}
+function fallbackCopy(t, done){
+  try{
+    const ta = document.createElement('textarea');
+    ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); ta.remove(); done();
+  }catch(e){ toast('Copy failed', 'err'); }
+}
+function openLink(url){
+  try{
+    if (TG){
+      if (url.startsWith('https://t.me') || url.startsWith('tg://')) TG.openTelegramLink(url);
+      else TG.openLink(url);
+      return;
+    }
+  }catch(e){}
+  window.open(url, '_blank');
+}
+
+/* ================================ 3. CONFIG LAYER ================================ */
+let CFG = null;
+let CFG_CUSTOM = false;
+function loadConfig(){
+  const over = LS.get('cp_config', null);
+  CFG_CUSTOM = !!over;
+  CFG = over ? deepMerge(JSON.parse(JSON.stringify(DEFAULT_CONFIG)), over) : JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+  return CFG;
+}
+function persistConfigOverride(partial){
+  const cur = LS.get('cp_config', {}) || {};
+  const next = deepMerge(cur, partial);
+  LS.set('cp_config', next);
+  loadConfig();
+}
+
+/* ================================ 4. STATE LAYER ================================ */
+let ST = null;
+let USER = null;
+function newState(){
+  return {
+    v: 1, savedAt: Date.now(), createdAt: Date.now(),
+    ore: CFG.currency.ore.start || 0,
+    gems: (CFG.currency.gem && CFG.currency.gem.enabled !== false) ? (CFG.currency.gem.start || 0) : 0,
+    xp: 0, level: 1,
+    nextUid: 1, miners: {}, // uid -> { id, level, field }
+    gearOwned: [], gearEquipped: {},
+    fields: [], // { req, unlocked, miner, vein:{type,hp,hpMax}, respawnAt }
+    mapId: (CFG.maps[0] && CFG.maps[0].id) || 'm1',
+    boostUntil: 0, boostMult: 1,
+    stats: { mined:0, veins:0, tasks:0, buys:0, days:1 },
+    tasks: {}, // id -> { start, done, last }
+    daily: { last: 0, streak: 0 },
+    friends: { code: uid().slice(-6).toUpperCase(), referredBy: '', invited: 0, earnedOre: 0 },
+    ach: {},
+    pay: [], wd: [],
+    prefs: {},
+    lastDay: '', lastSeen: Date.now(),
+    earnings: { lastDailyGram: 0, activeBoosts: [], refundBalance: 0, totalPurchased: 0, freeMinerActivated: false }
+  };
+}
+function fieldReq(i){ return (CFG.mining.fieldReqLevel||1) + i*(CFG.mining.fieldLevelStep||2); }
+function newField(i){ const r = fieldReq(i); return { req:r, unlocked:false, miner:null, vein:null, respawnAt:0 }; }
+function rebuildFields(){
+  const n = clamp(CFG.mining.fields|0, 1, 12);
+  const arr = (ST.fields || []).slice(0, n);
+  while (arr.length < n) arr.push(newField(arr.length));
+  arr.forEach((f, i) => { f.req = fieldReq(i); f.unlocked = ST.level >= f.req; });
+  ST.fields = arr;
+  // Clean orphan assignments
+  for (const k in ST.miners){
+    const m = ST.miners[k];
+    if (m.field !== null && m.field !== undefined && (!ST.fields[m.field] || ST.fields[m.field].miner !== k)) m.field = null;
+  }
+  ST.fields.forEach(f => { if (f.miner && !ST.miners[f.miner]) f.miner = null; });
+}
+function ensureState(){
+  ST.prefs = ST.prefs || {};
+  ST.stats = Object.assign({ mined:0, veins:0, tasks:0, buys:0, days:1 }, ST.stats||{});
+  ST.tasks = ST.tasks || {}; ST.ach = ST.ach || {};
+  ST.pay = ST.pay || []; ST.wd = ST.wd || [];
+  ST.friends = Object.assign({ code: uid().slice(-6).toUpperCase(), referredBy:'', invited:0, earnedOre:0 }, ST.friends||{});
+  ST.gearOwned = ST.gearOwned || []; ST.gearEquipped = ST.gearEquipped || {};
+  ST.earnings = Object.assign({ lastDailyGram:0, activeBoosts:[], refundBalance:0, totalPurchased:0, freeMinerActivated:false }, ST.earnings||{});
+  if (!ST.earnings.activeBoosts) ST.earnings.activeBoosts = [];
+  if (!CFG.maps.find(m => m.id === ST.mapId)) ST.mapId = CFG.maps[0].id;
+  rebuildFields();
+  // drop miners whose definition was removed by control panel
+  for (const k in ST.miners){ if (!CFG.miners.find(d => d.id === ST.miners[k].id)) delete ST.miners[k]; }
+  ST.fields.forEach(f => { if (f.miner && !ST.miners[f.miner]) f.miner = null; });
+}
+function loadState(){
+  const saved = LS.get('cp_state', null);
+  if (saved && typeof saved === 'object'){
+    ST = deepMerge(newState(), saved);
+  } else {
+    // try Telegram cloud save
+    ST = newState();
+  }
+  ensureState();
+}
+let saveT = null, fbSaveT = null;
+function saveNow(){
+  clearTimeout(saveT);
+  ST.savedAt = Date.now(); ST.lastSeen = Date.now();
+  LS.set('cp_state', ST);
+  try{ if (TG && TG.CloudStorage) TG.CloudStorage.setItem('cp_state', JSON.stringify(ST)); }catch(e){}
+  saveToFirebase();
+}
+function save(){
+  clearTimeout(saveT);
+  saveT = setTimeout(() => {
+    ST.savedAt = Date.now(); ST.lastSeen = Date.now();
+    LS.set('cp_state', ST);
+    try{ if (TG && TG.CloudStorage) TG.CloudStorage.setItem('cp_state', JSON.stringify(ST)); }catch(e){}
+    saveToFirebase();
+  }, 350);
+}
+function ensureDay(){
+  const today = new Date().toDateString();
+  if (ST.lastDay !== today){ ST.lastDay = today; ST.stats.days = (ST.stats.days||0) + 1; }
+}
+
+/* ================================ 4b. FIREBASE CLOUD SYNC ================================
+   Saves all user data to Firebase Realtime Database keyed by Telegram user ID.
+   Data persists across devices, app reinstalls, browser clears - tied to the TG ID forever.
+   ================================================================================================== */
+let FB_READY = false, FB_SYNCING = false, FB_UNLOAD = false;
+function fbUserId(){
+  if (USER && USER.id) return 'tg_' + USER.id;
+  let anonId = LS.get('cp_anon_id', null);
+  if (!anonId){ anonId = 'anon_' + uid(); LS.set('cp_anon_id', anonId); }
+  return anonId;
+}
+function saveToFirebase(){
+  if (!FB_READY || !window.FB || FB_SYNCING) return;
+  const userId = fbUserId();
+  if (!userId) return;
+  try{
+    const db = window.FB.db, r = window.FB.ref;
+    window.FB.set(r(db, 'users/' + userId + '/state'), ST);
+    window.FB.set(r(db, 'users/' + userId + '/lastSeen'), Date.now());
+    if (USER){
+      window.FB.set(r(db, 'users/' + userId + '/profile'), {
+        name: USER.name || '', username: USER.username || '', photo: USER.photo || '',
+        level: ST.level || 1, ore: ST.ore || 0, gems: ST.gems || 0
+      });
+    }
+  }catch(e){}
+}
+async function syncFromFirebase(){
+  if (!FB_READY || !window.FB) return;
+  const userId = fbUserId();
+  if (!userId) return;
+  try{
+    FB_SYNCING = true;
+    const snap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + userId + '/state'));
+    if (snap.exists()){
+      const remote = snap.val();
+      const remoteTs = remote.savedAt || 0;
+      const localTs = ST.savedAt || 0;
+      if (remoteTs > localTs){
+        ST = deepMerge(newState(), remote);
+        ensureState();
+        closeAllTop(); go(VIEW, true);
+        updChips(true);
+        LS.set('cp_state', ST);
+      }
+    } else {
+      saveToFirebase();
+    }
+  }catch(e){}finally{ FB_SYNCING = false; }
+}
+function listenFirebase(){
+  if (!FB_READY || !window.FB) return;
+  const userId = fbUserId();
+  if (!userId) return;
+  try{
+    window.FB.onValue(window.FB.ref(window.FB.db, 'users/' + userId + '/state'), (snap) => {
+      if (FB_SYNCING) return;
+      if (snap.exists()){
+        const remote = snap.val();
+        const remoteTs = remote.savedAt || 0;
+        if (remoteTs > (ST.savedAt || 0) + 2000){
+          FB_SYNCING = true;
+          ST = deepMerge(newState(), remote);
+          ensureState();
+          if (NAVSTACK.length === 0) go(VIEW, true);
+          updChips(true);
+          LS.set('cp_state', ST);
+          FB_SYNCING = false;
+        }
+      }
+    });
+  }catch(e){}
+}
+function initFirebase(){
+  if (FB_READY) return;
+  if (!window.FB){ setTimeout(initFirebase, 300); return; }
+  FB_READY = true;
+  syncFromFirebase();
+  listenFirebase();
+}
+window.addEventListener('firebase-ready', () => { setTimeout(initFirebase, 300); });
+
+/* ---------- derived helpers ---------- */
+const MAP = () => CFG.maps.find(m => m.id === ST.mapId) || CFG.maps[0];
+function prefs(){ return Object.assign({
+  accent: CFG.ui.accent, accent2: CFG.ui.accent2, haptics: true, sfx: true, animations: true
+}, ST.prefs || {}); }
+function setPref(k, v){ ST.prefs[k] = v; save(); applyPrefs(); }
+function gearList(){ return (ST.gearEquipped ? Object.values(ST.gearEquipped) : []).map(id => CFG.gear.find(g => g.id === id)).filter(Boolean); }
+function gearVal(k){ return gearList().reduce((s,g) => s + (g[k]||0), 0); }
+function boostMult(){ return (ST.boostUntil||0) > Date.now() ? (ST.boostMult||1) : 1; }
+function minerPower(m, def){ return (def.power||0) * (1 + (CFG.mining.upgradePowerStep||0.22) * ((m.level||1) - 1)); }
+
+/* ---------- EARNINGS: purchase boost, daily gram, refund ---------- */
+function earningsCfg(){ return CFG.earnings || { enabled:false }; }
+function getActivePurchaseBoosts(){
+  const E = earningsCfg();
+  if (E.enabled === false || !E.purchaseBoostPercent) return [];
+  const now = Date.now();
+  return (ST.earnings.activeBoosts || []).filter(b => !b.refunded && b.expiresAt > now);
+}
+function getPurchaseBoostMult(){
+  const E = earningsCfg();
+  if (E.enabled === false || !E.purchaseBoostPercent) return 0;
+  const active = getActivePurchaseBoosts();
+  return active.length * (E.purchaseBoostPercent / 100);
+}
+function getPurchaseBoostPct(){
+  return Math.round(getPurchaseBoostMult() * 100);
+}
+function addPurchaseBoost(amountTon){
+  const E = earningsCfg();
+  if (E.enabled === false || !E.purchaseBoostPercent || !E.purchaseBoostDays) return;
+  if (amountTon <= 0) return;
+  ST.earnings = ST.earnings || { lastDailyGram:0, activeBoosts:[], refundBalance:0, totalPurchased:0 };
+  ST.earnings.activeBoosts.push({
+    id: uid(), purchaseTs: Date.now(), amountTon: amountTon,
+    expiresAt: Date.now() + E.purchaseBoostDays * 24 * 3600 * 1000, refunded: false
+  });
+  ST.earnings.totalPurchased = (ST.earnings.totalPurchased || 0) + amountTon;
+}
+function checkExpiredBoosts(){
+  const E = earningsCfg();
+  if (E.enabled === false) return;
+  if (!ST.earnings || !ST.earnings.activeBoosts) return;
+  const now = Date.now();
+  let refunded = 0, count = 0;
+  ST.earnings.activeBoosts.forEach(b => {
+    if (!b.refunded && b.expiresAt <= now){
+      b.refunded = true;
+      if (E.refundAfterExpiry !== false){
+        ST.earnings.refundBalance = (ST.earnings.refundBalance || 0) + b.amountTon;
+        refunded += b.amountTon; count++;
+      }
+    }
+  });
+  // Clean up old refunded boosts older than 7 days
+  ST.earnings.activeBoosts = ST.earnings.activeBoosts.filter(b => !b.refunded || (now - b.expiresAt < 7 * 86400000));
+  if (refunded > 0){
+    toast(fmtTon(refunded) + ' TON refunded to your balance' + (count > 1 ? ' (' + count + ' boosts expired)' : ''), 'gold', 'gift');
+    save();
+  }
+}
+function claimDailyGram(){
+  const E = earningsCfg();
+  if (E.enabled === false || !E.dailyGramReward || E.dailyGramReward <= 0) return;
+  if (!ST.earnings.freeMinerActivated) return; // Requires free miner activation
+  const now = Date.now();
+  if (now - (ST.earnings.lastDailyGram || 0) < 24 * 3600 * 1000) return;
+  const gramOre = E.dailyGramReward * (CFG.economy.orePerTon || 20000);
+  ST.ore += gramOre;
+  ST.stats.mined += gramOre;
+  ST.earnings.lastDailyGram = now;
+  sfx('coin'); hapOk();
+  toast('Daily gram reward: +' + fmt(gramOre) + ' ORE (' + E.dailyGramReward + ' gram)', 'gold', 'gift');
+  save(); updChips(true);
+}
+/* Format miner transaction comment: {minerId}_{userId} */
+function minerTxComment(minerId){
+  const uid = USER && USER.id ? USER.id : 'anon';
+  return minerId + '_' + uid;
+}
+/* Calculate miner earnings for display */
+function minerEarnings(power){
+  const rate = CFG.economy.orePerTon || 20000;
+  const perSec = power;
+  const perHour = perSec * 3600;
+  const perDay = perHour * 24;
+  const perWeek = perDay * 7;
+  const perMonth = perDay * 30;
+  return {
+    perHour: perHour, perDay: perDay, perWeek: perWeek, perMonth: perMonth,
+    tonHour: perHour / rate, tonDay: perDay / rate, tonWeek: perWeek / rate, tonMonth: perMonth / rate
+  };
+}
+
+function totalRate(){
+  const md = MAP(), pb = gearVal('bonus'), bm = boostMult();
+  let sum = 0;
+  ST.fields.forEach(f => {
+    if (!f.unlocked || !f.miner) return;
+    const inst = ST.miners[f.miner]; if (!inst) return;
+    const def = CFG.miners.find(d => d.id === inst.id); if (!def) return;
+    sum += minerPower(inst, def);
+  });
+  const baseRate = sum * (md ? md.mult : 1) * (1 + pb) * bm;
+  const purchaseBoost = getPurchaseBoostMult();
+  return baseRate * (1 + purchaseBoost);
+}
+function ownedCount(id){ let n = 0; for (const k in ST.miners) if (ST.miners[k].id === id) n++; return n; }
+function levelNeed(l){ return Math.round(120 * Math.pow(l, 1.5)); }
+function equipBest(slot){
+  const own = CFG.gear.filter(g => g.slot === slot && ST.gearOwned.includes(g.id));
+  if (!own.length){ delete ST.gearEquipped[slot]; return; }
+  const score = g => (g.bonus||0) + (g.bonusLoot||0) + (g.offlineHours||0)*0.01;
+  own.sort((a,b) => score(b) - score(a));
+  ST.gearEquipped[slot] = own[0].id;
+}
+/* Upgrade cost in TON - miners can only be upgraded with TON */
+function upgradeCost(def, lvl){
+  if (def.noUpgrade || def.free) return -1; // Free miners cannot be upgraded
+  // Base TON cost proportional to miner power, increases per level
+  const baseTon = Math.max(0.01, (def.power || 1) * 0.002);
+  return Math.round(baseTon * Math.pow(CFG.mining.upgradeCostMult||1.35, (lvl||1) - 1) * 1000) / 1000;
+}
+function addMiner(def){
+  const u = 'u' + (ST.nextUid++);
+  ST.miners[u] = { id: def.id, level: 1, field: null };
+  const free = ST.fields.find(f => f.unlocked && !f.miner);
+  if (free){ free.miner = u; ST.miners[u].field = ST.fields.indexOf(free); }
+  return u;
+}
+
+/* ================================ 5. ICONS + SVG ART ================================ */
+const ICONS = {
+  pick: '<path d="M5 19 14 10"/><path d="M8.5 3.5a13 13 0 0 1 12 12"/><path d="M8.5 3.5 5 7"/><path d="M20.5 15.5 17 19"/>',
+  tasks: '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>',
+  store: '<path d="M6 7h12l1.2 13H4.8z"/><path d="M9 10V7a3 3 0 0 1 6 0v3"/>',
+  friends: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8"/><path d="M17.5 14.4a6.5 6.5 0 0 1 4 5.6"/>',
+  more: '<path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="7" cy="18" r="2"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  chevR: '<path d="m9 5 7 7-7 7"/>',
+  chevL: '<path d="m15 5-7 7 7 7"/>',
+  copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
+  ext: '<path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M19 13v6a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/>',
+  gear: '<circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5 5l2.1 2.1M16.9 16.9 19 19M19 5l-2.1 2.1M7.1 16.9 5 19"/>',
+  wallet: '<path d="M3 7a2 2 0 0 1 2-2h13a1 1 0 0 1 1 1v2"/><path d="M3 7v11a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-9a1 1 0 0 0-1-1H5a2 2 0 0 1-2-2Z"/><path d="M16.5 13.5h.01"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  zap: '<path d="M13 2 4 14h6l-1 8 9-12h-6z"/>',
+  gem: '<path d="M6 3h12l4 6-10 12L2 9z"/><path d="M2 9h20M12 21 8 9l4-6 4 6z"/>',
+  ore: '<path d="M8 21 3 14l4-9 8-2 6 8-4 10z"/><path d="M7 5l6 4-3 5"/>',
+  ton: '<circle cx="12" cy="12" r="9"/><path d="M6.5 8h11L12 17z"/><path d="M12 8v6M9.5 8 12 11.5 14.5 8"/>',
+  lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  check: '<path d="m5 13 4 4L19 7"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  share: '<circle cx="6" cy="12" r="2.5"/><circle cx="17" cy="5.5" r="2.5"/><circle cx="17" cy="18.5" r="2.5"/><path d="m8.3 10.8 6.4-4M8.3 13.2l6.4 4"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v8h14v-8M12 8v12"/><path d="M12 8a3 3 0 1 0-3-3c0 1.7 1.3 3 3 3ZM12 8a3 3 0 1 1 3-3c0 1.7-1.3 3-3 3Z"/>',
+  flame: '<path d="M12 2s5 4.6 5 9.6a5 5 0 0 1-10 0c0-2.4 1.3-4 2-5.6.9 1 1.4 1.9 1.5 3.3C11.8 7.6 11 4.5 12 2Z"/>',
+  trophy: '<path d="M8 4h8v5a4 4 0 0 1-8 0z"/><path d="M8 5H5a3 3 0 0 0 3 4M16 5h3a3 3 0 0 1-3 4M12 13v3M8 20h8M10 16h4l1 4H9z"/>',
+  logout: '<path d="M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3"/><path d="m15 8 4 4-4 4M19 12H9"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v5h-5"/>',
+  send: '<path d="m3 11 18-8-8 18-2.5-7.5z"/>',
+  alert: '<path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18h.01"/>',
+  layers: '<path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/>',
+  star: '<path d="m12 3 2.7 5.6 6.3.8-4.6 4.3 1.2 6.1L12 16.9 6.4 19.8l1.2-6.1L3 9.4l6.3-.8z"/>',
+  shield: '<path d="M12 2 4 6v6c0 5 3.5 8.5 8 10 4.5-1.5 8-5 8-10V6z"/>',
+  link: '<path d="M10 14a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 10a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>',
+  cart: '<path d="M3 11h18l-2 7H5z"/><path d="m6 11 2.5-5h7L18 11"/><path d="M12 6v5"/>',
+  lamp: '<path d="M9 3h6l1 6H8z"/><path d="M12 9v7"/><path d="M8 21a4 4 0 0 1 8 0z"/><path d="M12 16v2"/>',
+  bolt: '<path d="M13 2 4 14h6l-1 8 9-12h-6z"/>',
+  history: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/>'
+};
+function I(n, cls){
+  return '<svg class="ic ' + (cls||'') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[n]||ICONS.info) + '</svg>';
+}
+const RARITY = {
+  common: { c:'#9aa4b2', label:'COMMON' },
+  uncommon: { c:'#4ade80', label:'UNCOMMON' },
+  rare: { c:'#38bdf8', label:'RARE' },
+  epic: { c:'#a78bfa', label:'EPIC' },
+  legendary: { c:'#fbbf24', label:'LEGENDARY' }
+};
+const LOOTS = {
+  stone: { n:'Stone', c:'#9aa4b2', v:0.7 },
+  coal: { n:'Coal', c:'#64748b', v:1 },
+  copper: { n:'Copper', c:'#f59e0b', v:1.4 },
+  iron: { n:'Iron', c:'#cbd5e1', v:2 },
+  amber: { n:'Amber', c:'#fbbf24', v:2.8 },
+  silver: { n:'Silver', c:'#e2e8f0', v:3.6 },
+  frost: { n:'Frost Opal', c:'#67e8f9', v:5 },
+  gold: { n:'Gold', c:'#facc15', v:6.5 },
+  amethyst: { n:'Amethyst', c:'#a78bfa', v:9 },
+  ruby: { n:'Ruby', c:'#f87171', v:12 },
+  magma: { n:'Magma Core', c:'#fb923c', v:16 },
+  diamond: { n:'Diamond', c:'#67e8f9', v:22 },
+  void: { n:'Voidstone', c:'#e879f9', v:30 }
+};
+
+/* logo: hexagon + pickaxe with orbiting spark */
+function logoSVG(cls){
+  return '<svg class="' + (cls||'') + '" viewBox="0 0 48 48" fill="none">'
+    + '<path d="M24 3 42 13v22L24 45 6 35V13z" fill="rgba(245,185,66,.1)" stroke="url(#lgGrad)" stroke-width="2.2"/>'
+    + '<path d="M17 32 28 21" stroke="#f5b942" stroke-width="2.6" stroke-linecap="round"/>'
+    + '<path d="M21.5 14.5a10 10 0 0 1 12 12" stroke="#e8d5b0" stroke-width="2.6" stroke-linecap="round"/>'
+    + '<path d="M21.5 14.5 18.5 17.5M33.5 26.5 30.5 29.5" stroke="#e8d5b0" stroke-width="2.6" stroke-linecap="round"/>'
+    + '<path d="M30 30l2 2.4M15.5 18l2.2 2" stroke="#22d3ee" stroke-width="2" stroke-linecap="round"/>'
+    + '<g class="sc-orb"><circle cx="24" cy="6" r="1.9" fill="#22d3ee"/></g>'
+    + '<defs><linearGradient id="lgGrad" x1="6" y1="3" x2="42" y2="45"><stop stop-color="#f5b942"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs>'
+    + '</svg>';
+}
+
+/* animated miner avatar, tinted by rarity */
+function minerSVG(color, small){
+  return '<svg viewBox="0 0 48 48" fill="none">'
+    + '<ellipse cx="24" cy="43.5" rx="10" ry="2.6" fill="rgba(0,0,0,.4)"/>'
+    + '<g class="m-bob">'
+    + '<rect x="15" y="26" width="18" height="15" rx="7" fill="#2c3a58"/>'
+    + '<rect x="21" y="26" width="6" height="6" rx="2" fill="#f2c9a0"/>'
+    + '<circle cx="24" cy="18.5" r="8.6" fill="#f2c9a0"/>'
+    + '<path d="M15.2 19a8.8 8.8 0 0 1 17.6 0z" fill="' + color + '"/>'
+    + '<rect x="15.2" y="18" width="17.6" height="2.6" rx="1.3" fill="' + color + '" style="filter:brightness(.75)"/>'
+    + '<rect x="21.8" y="10.2" width="4.4" height="3.4" rx="1" fill="#fff8d8"/>'
+    + '<circle cx="21" cy="21.5" r="1.2" fill="#1e2638"/><circle cx="27" cy="21.5" r="1.2" fill="#1e2638"/>'
+    + '<path d="M21.5 24.3a3.2 3.2 0 0 0 5 0" stroke="#1e2638" stroke-width="1.2" fill="none" stroke-linecap="round"/>'
+    + '</g>'
+    + '<g class="pick-sw">'
+    + '<path d="M34.5 26.5 42 12" stroke="#8a5a2b" stroke-width="2.6" stroke-linecap="round"/>'
+    + '<path d="M36.5 9.5a11 11 0 0 1 11 11" stroke="#c9d4e6" stroke-width="3.2" fill="none" stroke-linecap="round"/>'
+    + '<path d="M36.5 9.5 33 13M47.5 20.5 44 24" stroke="#c9d4e6" stroke-width="3.2" stroke-linecap="round"/>'
+    + '</g>'
+    + '</svg>';
+}
+function gemMini(color, size){
+  const s = size || 10;
+  return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" style="flex:none">'
+    + '<path d="M6 4h12l4 6-10 11L2 10z" fill="' + color + '" opacity=".9"/>'
+    + '<path d="M2 10h20M12 21 8.5 10 12 4l3.5 6z" stroke="rgba(255,255,255,.55)" stroke-width="1.4" fill="none"/>'
+    + '</svg>';
+}
+/* big animated mine scene (gif-style loop) themed by map */
+let SCENE_ID = 0;
+function sceneSVG(th){
+  SCENE_ID++;
+  const id = 'sc' + SCENE_ID;
+  return '<svg class="scene" viewBox="0 0 400 172" preserveAspectRatio="xMidYMid slice">'
+    + '<defs>'
+    + '<linearGradient id="' + id + 'a" x1="0" y1="0" x2="0" y2="1"><stop stop-color="' + th.sky1 + '"/><stop offset="1" stop-color="' + th.sky2 + '"/></linearGradient>'
+    + '<linearGradient id="' + id + 'r" x1="0" y1="0" x2="0" y2="1"><stop stop-color="' + th.rock + '"/><stop offset="1" stop-color="#0c1220"/></linearGradient>'
+    + '<radialGradient id="' + id + 'l"><stop stop-color="rgba(255,244,200,.5)"/><stop offset="1" stop-color="rgba(255,244,200,0)"/></radialGradient>'
+    + '</defs>'
+    + '<rect width="400" height="172" rx="12" fill="url(#' + id + 'a)"/>'
+    + '<path d="M0 96 Q60 66 120 92 T240 88 T400 94 V172 H0 Z" fill="' + th.rock + '" opacity=".55"/>'
+    + '<rect y="98" width="400" height="74" fill="url(#' + id + 'r)"/>'
+    + '<path d="M58 98 v52 M58 98 l8 -10 h268 l8 10 M342 98 v52" stroke="#0a0f1a" stroke-width="6" fill="none" opacity=".85"/>'
+    + '<path d="M58 98 v52 M58 98 l8 -10 h268 l8 10 M342 98 v52" stroke="#3a2c1c" stroke-width="3" fill="none"/>'
+    + '<g class="sc-lamp"><rect x="186" y="96" width="5" height="14" rx="2" fill="#1c2436"/><circle cx="188.5" cy="113" r="3.4" fill="#ffe9a8"/><ellipse cx="188.5" cy="130" rx="30" ry="26" fill="url(#' + id + 'l)" opacity=".5"/></g>'
+    + '<rect x="52" y="142" width="300" height="3" rx="1.5" fill="#3a465e"/>'
+    + '<rect x="52" y="149" width="300" height="3" rx="1.5" fill="#3a465e"/>'
+    + '<g fill="#232f47">' + [70,110,150,190,230,270,310].map(x => '<rect x="' + x + '" y="141" width="4" height="12" rx="1"/>').join('') + '</g>'
+    + '<g class="sc-cart"><g>'
+    + '<path d="M0 0 h44 l-4 16 h-36 z" fill="#2b3752" stroke="#3f4f70" stroke-width="1.5"/>'
+    + '<path d="M4 0 q6 -9 14 -9 t14 5 q6 3 8 4 z" fill="' + th.crystal + '" opacity=".9"/>'
+    + '<circle cx="10" cy="19" r="4" fill="#141c2e" stroke="#4a5a7c" stroke-width="2"/>'
+    + '<circle cx="34" cy="19" r="4" fill="#141c2e" stroke="#4a5a7c" stroke-width="2"/>'
+    + '</g></g>'
+    + '<g class="sc-crystal"><path d="M356 96 l10 -22 10 22 z" fill="' + th.crystal + '"/><path d="M366 74 l0 22" stroke="rgba(255,255,255,.5)" stroke-width="1.4"/></g>'
+    + '<g class="sc-crystal" style="animation-delay:.9s"><path d="M332 96 l7 -14 7 14 z" fill="' + th.crystal + '" opacity=".8"/></g>'
+    + '<g class="sc-crystal" style="animation-delay:1.6s"><path d="M20 98 l8 -18 8 18 z" fill="' + th.crystal + '" opacity=".75"/></g>'
+    + '<g fill="#ffd68a">'
+    + '<circle class="sc-spark" cx="150" cy="118" r="1.8"/>'
+    + '<circle class="sc-spark" style="animation-delay:.18s" cx="158" cy="110" r="1.3"/>'
+    + '<circle class="sc-spark" style="animation-delay:.31s" cx="143" cy="112" r="1.2"/>'
+    + '</g>'
+    + '<g fill="#9fb0cc">'
+    + '<circle class="sc-dust" cx="120" cy="100" r="1.6"/>'
+    + '<circle class="sc-dust" style="animation-delay:1.2s" cx="200" cy="102" r="1.3"/>'
+    + '<circle class="sc-dust" style="animation-delay:2.1s" cx="280" cy="99" r="1.7"/>'
+    + '<circle class="sc-dust" style="animation-delay:3s" cx="245" cy="101" r="1.2"/>'
+    + '</g>'
+    + '</svg>';
+}
+function chestSVG(){
+  return '<svg class="cico" viewBox="0 0 56 56" fill="none">'
+    + '<g class="chest-g">'
+    + '<path d="M8 26c0-9 9-14 20-14s20 5 20 14v4H8z" fill="#7c5a2e"/>'
+    + '<path d="M8 26c0-9 9-14 20-14s20 5 20 14" stroke="#a5813f" stroke-width="2.4" fill="none"/>'
+    + '<rect x="8" y="28" width="40" height="18" rx="3" fill="#8f6a34"/>'
+    + '<rect x="8" y="30" width="40" height="3" fill="#5e441f"/>'
+    + '<rect x="24" y="26" width="8" height="10" rx="2" fill="#f5b942"/>'
+    + '<circle cx="28" cy="31" r="1.7" fill="#5e441f"/>'
+    + '</g>'
+    + '<path d="M17 15l1.4 3 3 1.4-3 1.4-1.4 3-1.4-3-3-1.4 3-1.4z" fill="#ffd68a" opacity=".9"/>'
+    + '<path d="M40 10l1 2.2 2.2 1-2.2 1-1 2.2-1-2.2-2.2-1 2.2-1z" fill="#22d3ee" opacity=".85"/>'
+    + '</svg>';
+}
+function avatarSVG(name){
+  const initials = (name||'M').trim().split(/\s+/).map(w => w[0]).slice(0,2).join('').toUpperCase();
+  return '<svg viewBox="0 0 64 64" style="width:100%;height:100%">'
+    + '<defs><linearGradient id="avG" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#22d3ee"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs>'
+    + '<rect width="64" height="64" fill="url(#avG)"/>'
+    + '<text x="32" y="40" text-anchor="middle" font-family="Manrope,sans-serif" font-size="24" font-weight="800" fill="#0b0f1a">' + esc(initials) + '</text>'
+    + '</svg>';
+}
+
+/* ================================ 6. UI FRAMEWORK ================================ */
+const TG = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+let TCUI = null, WALLET = null;
+
+function hap(kind){
+  if (!prefs().haptics || !TG || !TG.HapticFeedback) return;
+  try{ TG.HapticFeedback.impactOccurred(kind || 'light'); }catch(e){}
+}
+function hapOk(){ if (prefs().haptics && TG && TG.HapticFeedback){ try{ TG.HapticFeedback.notificationOccurred('success'); }catch(e){} } }
+let AC = null;
+function sfx(name){
+  if (!prefs().sfx) return;
+  try{
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    if (AC.state === 'suspended') return;
+    const t = AC.currentTime;
+    const seq = {
+      tap:[[560,.05]], ok:[[660,.07],[880,.09]], buy:[[720,.06],[980,.06],[1240,.11]],
+      err:[[210,.13]], level:[[520,.08],[660,.08],[880,.1],[1180,.14]], coin:[[1320,.05],[1560,.06]]
+    }[name] || [[520,.05]];
+    seq.forEach((sf, i) => {
+      const o = AC.createOscillator(), g = AC.createGain();
+      o.type = 'sine'; o.frequency.value = sf[0];
+      g.gain.setValueAtTime(0.0001, t + i*.07);
+      g.gain.exponentialRampToValueAtTime(.11, t + i*.07 + .012);
+      g.gain.exponentialRampToValueAtTime(.0001, t + i*.07 + sf[1]);
+      o.connect(g); g.connect(AC.destination);
+      o.start(t + i*.07); o.stop(t + i*.07 + sf[1] + .03);
+    });
+  }catch(e){}
+}
+function toast(msg, type, icon){
+  const wrap = $('#toasts'); if (!wrap) return;
+  const t = document.createElement('div');
+  t.className = 'toast ' + (type || 'info');
+  const ic = icon || ({ok:'check', err:'alert', info:'info', gold:'gift'})[type || 'info'] || 'info';
+  t.innerHTML = I(ic) + '<span>' + msg + '</span>';
+  wrap.appendChild(t);
+  while (wrap.children.length > 3) wrap.firstChild.remove();
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, 2600);
+}
+/* confetti */
+const FX = { c:null, ctx:null, ps:[], running:false };
+function fxInit(){
+  FX.c = $('#fx'); if (!FX.c) return;
+  FX.ctx = FX.c.getContext('2d');
+  const size = () => { const r = $('#appwrap').getBoundingClientRect(); FX.c.width = r.width * 2; FX.c.height = r.height * 2; FX.ctx.scale(2,2); };
+  size();
+  window.addEventListener('resize', size);
+}
+function confettiAt(x, y, n){
+  n = n || 70;
+  const cols = ['#f5b942','#22d3ee','#a78bfa','#4ade80','#f87171','#ffffff'];
+  for (let i = 0; i < n; i++){
+    FX.ps.push({ x, y, vx: rnd(-4.2,4.2), vy: rnd(-7.5,-2), g: .18, life: rnd(45,80), c: cols[ri(0,cols.length-1)], s: rnd(2.4,5.2), r: rnd(0,Math.PI*2), vr: rnd(-.2,.2) });
+  }
+  if (!FX.running){ FX.running = true; fxLoop(); }
+}
+function confettiEl(el, n){
+  if (!el || !FX.c) return;
+  const wr = $('#appwrap').getBoundingClientRect(), r = el.getBoundingClientRect();
+  confettiAt(r.left - wr.left + r.width/2, r.top - wr.top + r.height/2, n);
+}
+function fxLoop(){
+  const ctx = FX.ctx; if (!ctx){ FX.running = false; return; }
+  ctx.clearRect(0, 0, FX.c.width, FX.c.height);
+  FX.ps = FX.ps.filter(p => p.life > 0);
+  FX.ps.forEach(p => {
+    p.x += p.vx; p.y += p.vy; p.vy += p.g; p.life--; p.r += p.vr;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r);
+    ctx.fillStyle = p.c; ctx.globalAlpha = clamp(p.life/40, 0, 1);
+    ctx.fillRect(-p.s/2, -p.s/2, p.s, p.s * .62);
+    ctx.restore();
+  });
+  if (FX.ps.length) requestAnimationFrame(fxLoop);
+  else { FX.running = false; ctx.clearRect(0, 0, FX.c.width, FX.c.height); }
+}
+/* background drifting particles */
+function bgParticles(){
+  const w = $('#bgfx'); if (!w) return;
+  for (let i = 0; i < 9; i++){
+    const s = document.createElement('span');
+    s.className = 'pt';
+    const sz = rnd(4, 11);
+    s.style.width = s.style.height = sz + 'px';
+    s.style.left = rnd(2, 96) + '%';
+    s.style.background = Math.random() > .5 ? 'radial-gradient(circle, rgba(245,185,66,.55), transparent 70%)' : 'radial-gradient(circle, rgba(34,211,238,.5), transparent 70%)';
+    s.style.animationDuration = rnd(11, 22) + 's';
+    s.style.animationDelay = -rnd(0, 20) + 's';
+    w.appendChild(s);
+  }
+}
+/* nav stack: pages, sheets, modals */
+const NAVSTACK = [];
+function openSheet(html, opts){
+  opts = opts || {};
+  const w = document.createElement('div');
+  w.className = 'sh-wrap';
+  w.innerHTML = '<div class="sh-bd"></div><div class="sheet"><div class="grab"></div>' + html + '</div>';
+  $('#sheetRoot').appendChild(w);
+  requestAnimationFrame(() => w.classList.add('open'));
+  w.querySelector('.sh-bd').addEventListener('click', () => closeTop());
+  NAVSTACK.push({ type:'sheet', el:w, id:opts.id||'' });
+  updateBack();
+  return w;
+}
+function openPage(id){
+  if (NAVSTACK.find(n => n.id === id)){ return; }
+  const fn = PAGES[id]; if (!fn) return;
+  const w = document.createElement('div');
+  w.className = 'page';
+  w.innerHTML = fn();
+  $('#pageRoot').appendChild(w);
+  requestAnimationFrame(() => w.classList.add('open'));
+  NAVSTACK.push({ type:'page', el:w, id });
+  updateBack();
+  if (PAGES_ON[id]) PAGES_ON[id](w);
+  sfx('tap');
+}
+function closeTop(){
+  const t = NAVSTACK.pop();
+  if (!t) return;
+  t.el.classList.remove('open');
+  setTimeout(() => t.el.remove(), 320);
+  updateBack();
+  if (t.id === 'wallet') updWalletUI = null;
+}
+function closeAllTop(){ while (NAVSTACK.length) closeTop(); }
+let CONFIRM_CB = null;
+function confirmSheet(title, msg, okLabel, cb, danger){
+  CONFIRM_CB = cb;
+  openSheet('<div class="sh-t">' + title + '</div><div class="note">' + msg + '</div>'
+    + '<div class="row mt14">'
+    + '<button class="btn ghost grow" data-act="close-top">Cancel</button>'
+    + '<button class="btn grow ' + (danger ? 'danger' : '') + '" data-act="confirm-ok">' + okLabel + '</button>'
+    + '</div>');
+}
+function updateBack(){
+  if (!TG || !TG.BackButton) return;
+  try{
+    if (NAVSTACK.length){
+      TG.BackButton.show();
+    } else if (CFG.ui.backButtonExit){
+      TG.BackButton.show();
+    } else {
+      TG.BackButton.hide();
+    }
+  }catch(e){}
+}
+function applyPrefs(){
+  const p = prefs();
+  document.documentElement.style.setProperty('--accent', p.accent);
+  document.documentElement.style.setProperty('--accent2', p.accent2);
+  document.body.classList.toggle('reduce', p.animations === false);
+  const mt = $('#metaTheme'); if (mt) mt.content = '#0b0f1a';
+  if (TG && TG.setHeaderColor){ try{ TG.setHeaderColor('#0b0f1a'); }catch(e){} }
+}
+
+/* ================================ 7. ROUTER + TOPBAR + NAV ================================== */
+let VIEW = 'mine';
+const NAV_META = {
+  mine: { icon:'pick', label:'DIG' },
+  tasks: { icon:'tasks', label:'JOBS' },
+  store: { icon:'store', label:'SHOP' },
+  friends: { icon:'friends', label:'CREW' },
+  more: { icon:'more', label:'MENU' }
+};
+/* Animated colourful SVG icons for bottom nav */
+function navIcon(v){
+  if (v === 'mine'){
+    return '<svg class="nav-ico nav-dig" viewBox="0 0 28 28" fill="none">'
+      + '<g class="nv-swing">'
+      + '<path d="M6 22 16 12" stroke="#f5b942" stroke-width="2.4" stroke-linecap="round"/>'
+      + '<path d="M10 4a9 9 0 0 1 9 9" stroke="#ffd98a" stroke-width="2.4" stroke-linecap="round" fill="none"/>'
+      + '<path d="M10 4 7 7" stroke="#ffd98a" stroke-width="2.4" stroke-linecap="round"/>'
+      + '<path d="M19 13 22 16" stroke="#ffd98a" stroke-width="2.4" stroke-linecap="round"/>'
+      + '</g>'
+      + '<circle cx="16" cy="10" r="1.6" fill="#ffffff" class="nv-spark1"/>'
+      + '<circle cx="21" cy="6" r="1.1" fill="#22d3ee" class="nv-spark2"/>'
+      + '</svg>';
+  }
+  if (v === 'tasks'){
+    return '<svg class="nav-ico nav-jobs" viewBox="0 0 28 28" fill="none">'
+      + '<g class="nv-clip">'
+      + '<rect x="6" y="6" width="16" height="18" rx="3" fill="rgba(34,211,238,.1)" stroke="#22d3ee" stroke-width="1.8"/>'
+      + '<rect x="11" y="4" width="6" height="4" rx="2" fill="#22d3ee"/>'
+      + '</g>'
+      + '<path d="M10 15l3 3 6-7" stroke="#34d399" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none" class="nv-check"/>'
+      + '<path d="M10 20h8" stroke="#22d3ee" stroke-width="1.6" stroke-linecap="round" opacity=".4"/>'
+      + '</svg>';
+  }
+  if (v === 'store'){
+    return '<svg class="nav-ico nav-shop" viewBox="0 0 28 28" fill="none">'
+      + '<g class="nv-bounce">'
+      + '<path d="M5 11h18l-1.5 13H6.5z" fill="rgba(52,211,153,.12)" stroke="#34d399" stroke-width="1.8" stroke-linejoin="round"/>'
+      + '<path d="M10 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round"/>'
+      + '<circle cx="14" cy="17" r="1.8" fill="#f5b942" class="nv-coin"/>'
+      + '<circle cx="14" cy="17" r="1" fill="#ffd98a"/>'
+      + '</g>'
+      + '</svg>';
+  }
+  if (v === 'friends'){
+    return '<svg class="nav-ico nav-crew" viewBox="0 0 28 28" fill="none">'
+      + '<g class="nv-p1">'
+      + '<circle cx="10" cy="11" r="4" fill="rgba(167,139,250,.14)" stroke="#a78bfa" stroke-width="1.8"/>'
+      + '<path d="M3 23a7 7 0 0 1 14 0" fill="none" stroke="#a78bfa" stroke-width="1.8" stroke-linecap="round"/>'
+      + '</g>'
+      + '<g class="nv-p2">'
+      + '<circle cx="20" cy="9" r="3" fill="rgba(232,121,249,.12)" stroke="#e879f9" stroke-width="1.6"/>'
+      + '<path d="M18 15a5 5 0 0 1 8 4" fill="none" stroke="#e879f9" stroke-width="1.6" stroke-linecap="round"/>'
+      + '</g>'
+      + '</svg>';
+  }
+  if (v === 'more'){
+    return '<svg class="nav-ico nav-menu" viewBox="0 0 28 28" fill="none">'
+      + '<rect x="5" y="7" width="18" height="3.5" rx="1.75" fill="#f87171" class="nv-bar1"/>'
+      + '<rect x="5" y="12.25" width="18" height="3.5" rx="1.75" fill="#f5b942" class="nv-bar2"/>'
+      + '<rect x="5" y="17.5" width="18" height="3.5" rx="1.75" fill="#22d3ee" class="nv-bar3"/>'
+      + '</svg>';
+  }
+  return I('more');
+}
+function renderTopbar(){
+  $('#tbOreIc').innerHTML = I('ore');
+  $('#tbWalletIc').innerHTML = I('ton');
+  $('#tbOreCur').textContent = CFG.currency.ore.name;
+  $('#splashName').textContent = CFG.app.name;
+  $('#splashTag').textContent = (CFG.app.tagline || '').toUpperCase();
+  $('#splashLogo').innerHTML = CFG.app.logoUrl
+    ? '<img src="' + esc(CFG.app.logoUrl) + '" style="width:100%;height:100%;border-radius:26px;object-fit:cover">'
+    : logoSVG('');
+  $('#tbGem').classList.toggle('hide', !(CFG.currency.gem && CFG.currency.gem.enabled !== false));
+  updWalletDot();
+  updChips(true);
+}
+function updWalletDot(){
+  const d = $('#tbWdot');
+  if (d) d.classList.toggle('on', !!(TCUI && TCUI.connected && WALLET));
+}
+function taskClaimable(){
+  const now = Date.now(); let n = 0;
+  CFG.tasks.forEach(t => {
+    if (!t.enabled) return;
+    const stt = ST.tasks[t.id] || {};
+    const vd = CFG.tasksCfg.verifySec || 10;
+    if (t.type === 'daily' || (t.cooldownH|0) > 0){
+      const cd = (t.type === 'daily' ? 24 : (t.cooldownH|0)) * 3600 * 1000;
+      if (!stt.last || now - stt.last >= cd) n++;
+    } else if (!stt.done && stt.start && now - stt.start >= vd*1000) n++;
+  });
+  return n;
+}
+function navLabel(v){
+  const L = (CFG.ui && CFG.ui.navLabels) || {};
+  return String(L[v] || NAV_META[v].label || v);
+}
+function renderNav(){
+  const order = (CFG.ui.navOrder && CFG.ui.navOrder.length ? CFG.ui.navOrder : ['mine','tasks','store','friends','more'])
+    .filter(v => NAV_META[v]);
+  const badge = taskClaimable();
+  $('#nav').innerHTML = order.map(v => {
+    return '<button class="nav-b' + (VIEW === v ? ' on' : '') + '" data-act="open-view" data-v="' + v + '" aria-label="' + esc(navLabel(v)) + '">'
+      + navIcon(v)
+      + '<span class="lb">' + esc(navLabel(v)) + '</span>'
+      + (v === 'tasks' && badge > 0 ? '<span class="nav-badge">' + badge + '</span>' : '')
+      + '</button>';
+  }).join('');
+}
+function go(v, keep){
+  if (!NAV_META[v]) return;
+  VIEW = v;
+  $$('#nav .nav-b').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  const el = $('#view');
+  el.innerHTML = VIEWS[v]();
+  el.classList.remove('viewin'); void el.offsetWidth; el.classList.add('viewin');
+  el.scrollTop = 0;
+  MINE_ELS = null;
+  if (v === 'mine') cacheMineEls();
+  if (!keep) sfx('tap');
+}
+function renderAll(){ renderTopbar(); renderNav(); go(VIEW, true); }
+
+/* ================================ 8. SCREEN: MINE ================================ */
+let MINE_ELS = null, FEED = [];
+function cacheMineEls(){
+  MINE_ELS = {
+    bal: $('#heroBal'), rate: $('#heroRate'), xpb: $('#heroXpBar'), xpt: $('#heroXpT'),
+    boost: $('#boostChip'), fields: $$('#view [data-fi]'), feed: $('#feedRow'),
+    dchest: $('#dailyC'), bars: {}
+  };
+  $$('#view [data-fbar]').forEach(b => MINE_ELS.bars[b.dataset.fbar] = b);
+}
+function veinRow(f){
+  if (!f.vein){
+    if (f.respawnAt > Date.now()) return '<div class="fresp" data-fresp="' + ST.fields.indexOf(f) + '">' + I('clock') + '<span>...</span></div>';
+    return '<div class="fresp">' + I('clock') + '<span>clearing</span></div>';
+  }
+  const l = LOOTS[f.vein.type] || { n:'Ore', c:'#9aa4b2' };
+  const pct = clamp(f.vein.hp / f.vein.hpMax * 100, 0, 100);
+  return '<div class="fbarw"><div class="f-vein mb10" style="margin-bottom:4px"><span class="ld" style="background:' + l.c + '"></span><span class="fvt">' + esc(l.n) + '</span></div>'
+    + '<div class="pbar"><i data-fbar="' + ST.fields.indexOf(f) + '" style="width:' + pct + '%;background:linear-gradient(90deg,' + l.c + ',#fff3)"></i></div></div>';
+}
+function rMine(){
+  const md = MAP(), rate = totalRate(), O = CFG.currency.ore.name, G = CFG.currency.gem.name;
+  const bm = boostMult(), bActive = (ST.boostUntil||0) > Date.now();
+  const owned = Object.keys(ST.miners).length;
+  const maxed = ST.xp >= levelNeed(ST.level) ? 100 : (ST.xp / levelNeed(ST.level) * 100);
+  const minersStrip = Object.keys(ST.miners).slice(0, 5).map(k => {
+    const def = CFG.miners.find(d => d.id === ST.miners[k].id); if (!def) return '';
+    const rc = RARITY[def.rarity] ? RARITY[def.rarity].c : '#9aa4b2';
+    return '<span class="mav" title="' + esc(def.name) + '">' + minerSVG(rc) + '</span>';
+  }).join('');
+  const dailyReady = Date.now() - (ST.daily.last||0) >= 24*3600*1000;
+  const dailyMult = Math.min(1 + Math.max(0, ST.daily.streak-1) * (CFG.daily.streakStep||.25), CFG.daily.streakCapMult||3);
+  return ''
+  + '<div class="hero">'
+    + '<div class="row between" style="align-items:flex-start">'
+      + '<div class="col">'
+        + '<div class="hlab">Shaft output</div>'
+        + '<div class="hbal">' + I('ore','ic-ore') + '<span class="num" id="heroBal">' + fmt(ST.ore) + '</span><span class="hcur">' + O + '</span></div>'
+        + '<div class="hsub num" id="heroRate">+' + fmt(rate*60) + ' ' + O + ' / min</div>'
+      + '</div>'
+      + '<div class="col end" style="gap:6px">'
+        + '<span id="boostChip" class="bchip' + (bActive ? '' : ' hide') + '">' + I('zap') + '<span class="num" id="boostCd">-' + bm + 'x</span></span>'
+        + (getPurchaseBoostPct() > 0 ? '<span class="bchip" style="background:rgba(245,185,66,.1);border-color:rgba(245,185,66,.35);color:var(--accent)">' + I('zap') + '<span class="num">+' + getPurchaseBoostPct() + '%</span></span>' : '')
+        + '<span class="mchip" style="cursor:pointer" data-act="map-open">' + esc(md.name) + ' x' + md.mult + '</span>'
+      + '</div>'
+    + '</div>'
+    + '<div class="mstrip">' + (minersStrip || '<span class="more-b">No miners yet - hire one below</span>')
+      + (owned > 5 ? '<span class="more-b">+' + (owned-5) + ' more</span>' : '') + '</div>'
+    + '<div class="hxpp"><span class="lvb">LV ' + ST.level + '</span><div class="pbar"><i id="heroXpBar" style="width:' + clamp(maxed,0,100) + '%"></i></div><span class="xt num" id="heroXpT">' + fmt(ST.xp) + '/' + fmt(levelNeed(ST.level)) + '</span></div>'
+    + '<div class="qacts">'
+      + '<button class="btn sm ghost" data-act="map-open">' + I('layers') + 'Maps</button>'
+      + '<button class="btn sm' + (bActive ? ' ghost' : ' pulse') + '" data-act="boost-open">' + I('zap') + (bActive ? 'Active' : 'Boost') + '</button>'
+      + '<button class="btn sm ghost" data-act="open-view" data-v="store">' + I('store') + 'Hire</button>'
+    + '</div>'
+  + '</div>'
+
+  + '<div class="stitle">Daily chest</div>'
+  + '<div class="card dchest" id="dailyC">'
+    + chestSVG()
+    + '<div class="grow"><div class="ct">Day ' + ((ST.daily.streak||0) + 1) + ' reward</div>'
+    + '<div class="cd">Streak bonus x' + (Math.round(dailyMult*100)/100) + ' - keep the streak alive</div></div>'
+    + (dailyReady
+      ? '<button class="btn sm pulse" data-act="daily-claim">' + I('gift') + 'Claim</button>'
+      : '<button class="btn sm ghost" disabled>' + I('clock') + '<span data-cd="' + ((ST.daily.last||0) + 24*3600*1000) + '">--</span></button>')
+  + '</div>'
+
+  + '<div class="stitle">Active seam<span class="st-x" data-act="map-open">' + I('layers') + 'Switch</span></div>'
+  + '<div class="card scenecard">'
+    + '<div class="schead"><span class="mapdot" style="background:' + md.theme.crystal + '"></span>'
+    + '<span class="mname">' + esc(md.name) + '</span><span class="mchip">x' + md.mult + ' loot</span>'
+    + '<span class="mchip" style="color:var(--accent);border-color:rgba(245,185,66,.4);background:rgba(245,185,66,.06)">' + owned + '/' + ST.fields.length + ' mining</span></div>'
+    + sceneSVG(md.theme)
+    + '<div class="feed" id="feedRow">' + feedHTML() + '</div>'
+  + '</div>'
+
+  + '<div class="stitle">Dig sites<span class="st-x" data-act="open-view" data-v="store">Manage crew</span></div>'
+  + '<div class="fgrid">' + ST.fields.map((f, i) => {
+      if (!f.unlocked){
+        return '<div class="field locked" data-fi="' + i + '"><div class="lockov">' + I('lock') + '<span>Level ' + f.req + '</span><span class="xs">to unlock</span></div></div>';
+      }
+      const inst = f.miner ? ST.miners[f.miner] : null;
+      const def = inst ? CFG.miners.find(d => d.id === inst.id) : null;
+      if (!def){
+        return '<div class="field emptyf" data-fi="' + i + '" data-act="field-tap" data-i="' + i + '">'
+          + '<div class="plusw">' + I('plus') + '</div><div class="fn mut">Assign miner</div></div>';
+      }
+      const rc = RARITY[def.rarity] ? RARITY[def.rarity].c : '#9aa4b2';
+      const fp = minerPower(inst, def) * md.mult * (1 + gearVal('bonus')) * bm;
+      return '<div class="field" data-fi="' + i + '" data-act="field-tap" data-i="' + i + '">'
+        + '<span class="rate-chip num">+' + (Math.round(fp*10)/10) + '/s</span>'
+        + '<div class="fav">' + minerSVG(rc) + '</div>'
+        + '<div class="fn">' + esc(def.name) + ' <span class="mut">L' + (inst.level||1) + '</span></div>'
+        + veinRow(f)
+      + '</div>';
+    }).join('') + '</div>'
+  + '<div class="note mt10" style="text-align:center">Miners work automatically - even while you are away.</div>';
+}
+function feedHTML(){
+  if (!FEED.length) return '<span class="lchip mut" style="border-style:dashed">Loot drops will appear here</span>';
+  return FEED.slice(0, 6).map(f => {
+    const l = LOOTS[f.t] || { n:'Ore', c:'#9aa4b2' };
+    return '<span class="lchip"><span class="ld" style="background:' + l.c + '"></span>' + esc(l.n) + ' <span style="color:var(--accent)">+' + fmt(f.val) + '</span></span>';
+  }).join('');
+}
+function floatOre(i, val){
+  const el = MINE_ELS && MINE_ELS.fields ? MINE_ELS.fields.find(f => f.dataset.fi == String(i)) : null;
+  if (!el) return;
+  const d = document.createElement('div');
+  d.className = 'float-ore num';
+  d.textContent = '+' + fmt(val);
+  el.appendChild(d);
+  setTimeout(() => d.remove(), 1450);
+}
+
+/* ================================ 9. SCREEN: TASKS ================================ */
+const TASK_ICON = { channel:'send', social:'share', site:'ext', link:'link', join:'friends' };
+function taskState(t){
+  const stt = ST.tasks[t.id] || {};
+  const now = Date.now();
+  const vd = (CFG.tasksCfg.verifySec || 10) * 1000;
+  if (t.type === 'daily' || (t.cooldownH|0) > 0){
+    const cd = (t.type === 'daily' ? 24 : (t.cooldownH|0)) * 3600 * 1000;
+    const ready = !stt.last || now - stt.last >= cd;
+    return { mode: ready ? 'claim' : 'wait', cdUntil: (stt.last||0) + cd, label: ready ? 'Claim' : 'Ready in' };
+  }
+  if (stt.done) return { mode:'done' };
+  if (!stt.start) return { mode:'start' };
+  if (now - stt.start < vd) return { mode:'verify', cdUntil: stt.start + vd };
+  return { mode:'claim' };
+}
+function rTasks(){
+  const list = CFG.tasks.filter(t => t.enabled);
+  const O = CFG.currency.ore.name, G = CFG.currency.gem.name;
+  return '<div class="card" style="background:linear-gradient(150deg,#1c2a4a,#121a2e)">'
+    + '<div class="row"><span style="color:var(--accent)">' + I('tasks') + '</span>'
+    + '<div class="grow"><div class="tt">Earn by exploring</div><div class="td mut" style="margin-top:2px">Complete missions to fill your pouch with ' + O + ' and ' + G + '.</div></div></div>'
+  + '</div>'
+  + '<div class="stitle">Missions<span class="st-x">' + list.length + ' available</span></div>'
+  + (list.length ? list.map(t => {
+      const ts = taskState(t);
+      let btn = '';
+      if (ts.mode === 'start') btn = '<button class="btn sm" data-act="task-start" data-id="' + t.id + '">' + I('ext') + 'Start</button>';
+      else if (ts.mode === 'verify') btn = '<button class="btn sm ghost" disabled>' + I('clock') + '<span data-cd="' + ts.cdUntil + '">--</span></button>';
+      else if (ts.mode === 'claim') btn = '<button class="btn sm pulse" data-act="task-claim" data-id="' + t.id + '">' + I('gift') + 'Claim</button>';
+      else if (ts.mode === 'wait') btn = '<button class="btn sm ghost" disabled>' + I('clock') + '<span data-cd="' + ts.cdUntil + '">--</span></button>';
+      else btn = '<span class="wtag" style="color:var(--good);border-color:rgba(52,211,153,.4)">' + I('check') + ' Done</span>';
+      return '<div class="card tcard">'
+        + '<div class="ticon">' + I(TASK_ICON[t.type] || 'link') + '</div>'
+        + '<div class="tmain"><div class="tt">' + esc(t.title) + '</div>'
+        + '<div class="td">' + esc(t.desc || '') + '</div>'
+        + '<div class="trew">'
+          + (t.rewardOre ? '<span class="rchip">' + I('ore') + '+' + fmt(t.rewardOre) + ' ' + O + '</span>' : '')
+          + (t.rewardGem ? '<span class="rchip gemc">' + I('gem') + '+' + t.rewardGem + ' ' + G + '</span>' : '')
+        + '</div></div>'
+        + '<div class="tside">' + btn + '</div>'
+      + '</div>';
+    }).join('')
+  : '<div class="card center" style="text-align:center"><div class="td mut">No missions right now. New ones are added by the team.</div></div>');
+}
+
+/* ================================ 10. SCREEN: FRIENDS ================================== */
+function refLink(){ return 'https://t.me/' + (CFG.app.botUsername || 'your_bot') + '?start=ref_' + ST.friends.code; }
+function rFriends(){
+  const F = CFG.friends, G = CFG.currency.gem.name, O = CFG.currency.ore.name;
+  if (F.enabled === false) return '<div class="card center" style="text-align:center;margin-top:30%"><div class="td mut">Friends module is disabled.</div></div>';
+  const link = refLink();
+  return '<div class="fhero">'
+    + '<div class="fico">' + I('friends') + '</div>'
+    + '<div class="ft">Build your crew</div>'
+    + '<div class="fd">' + esc(F.desc || 'Invite miners and earn a share of everything your crew digs up.') + '</div>'
+    + '<div class="trew" style="justify-content:center;margin-top:12px">'
+      + '<span class="rchip">' + I('ore') + '+' + fmt(F.bonusOre) + ' ' + O + '</span>'
+      + (F.bonusGem ? '<span class="rchip gemc">' + I('gem') + '+' + F.bonusGem + ' ' + G + '</span>' : '')
+      + '<span class="rchip tonc">' + I('zap') + F.commissionPercent + '% of their output</span>'
+    + '</div>'
+    + '<div class="refbox">'
+      + '<button class="btn sm grow" data-act="share-ref">' + I('share') + 'Share invite</button>'
+      + '<button class="btn sm ghost" data-act="copy" data-copy="' + esc(link) + '">' + I('copy') + 'Copy link</button>'
+    + '</div>'
+    + '<div class="codebox mt10">Your code: <b style="color:var(--accent)">' + esc(ST.friends.code) + '</b></div>'
+  + '</div>'
+  + '<div class="row mt10">'
+    + '<div class="card fstat"><b class="num" style="color:var(--accent2)">' + (ST.friends.invited||0) + '</b><span>Invited</span></div>'
+    + '<div class="card fstat"><b class="num" style="color:var(--accent)">' + fmt(ST.friends.earnedOre||0) + '</b><span>' + O + ' earned</span></div>'
+    + '<div class="card fstat"><b class="num" style="color:var(--good)">' + F.commissionPercent + '%</b><span>Commission</span></div>'
+  + '</div>'
+  + (ST.friends.referredBy
+    ? '<div class="card mt10 row">' + I('shield','ic-ton') + '<div class="grow"><div class="tt sm">Joined with invite code <b style="color:var(--accent2)">' + esc(ST.friends.referredBy) + '</b></div><div class="td mut">Your welcome bonus will be credited automatically.</div></div></div>'
+    : '')
+  + '<div class="card mt10"><div class="tt sm">How it works</div>'
+    + '<div class="note mt6">1. Share your personal link with friends.<br>2. They open the app through your link.<br>3. You receive a welcome bonus for each miner who joins, plus ' + F.commissionPercent + '% of everything their crew mines - forever.</div>'
+  + '</div>';
+}
+
+/* ================================ 11. SCREEN: STORE ================================ */
+let STORE_TAB = 'miners';
+function priceChips(it, kind){
+  const O = CFG.currency.ore.name, G = CFG.currency.gem.name;
+  const E = earningsCfg();
+  const tonOnly = E.tonOnlyPurchases !== false;
+  let out = '';
+  if (kind === 'boost'){
+    if (tonOnly){
+      if (it.priceTon) out += '<span class="pchip ic-ton">' + I('ton') + fmtTon(it.priceTon) + ' TON</span>';
+    } else {
+      if (it.priceGem) out += '<span class="pchip ic-gem">' + I('gem') + fmt(it.priceGem) + ' ' + G + '</span>';
+      if (it.priceTon) out += '<span class="pchip ic-ton">' + I('ton') + fmtTon(it.priceTon) + ' TON</span>';
+    }
+  } else if (kind === 'gems'){
+    out += '<span class="pchip ic-ton">' + I('ton') + fmtTon(it.priceTon) + ' TON</span>';
+  } else {
+    if (tonOnly){
+      if (it.costTon) out += '<span class="pchip ic-ton">' + I('ton') + fmtTon(it.costTon) + ' TON</span>';
+    } else {
+      if (it.costOre) out += '<span class="pchip ic-ore">' + I('ore') + fmt(it.costOre) + ' ' + O + '</span>';
+      if (it.costGem) out += '<span class="pchip ic-gem">' + I('gem') + fmt(it.costGem) + ' ' + G + '</span>';
+      if (it.costTon) out += '<span class="pchip ic-ton">' + I('ton') + fmtTon(it.costTon) + ' TON</span>';
+    }
+  }
+  return '<div class="pchips">' + out + '</div>';
+}
+function rStore(){
+  const O = CFG.currency.ore.name, G = CFG.currency.gem.name;
+  const tabs = [['miners','pick','Miners'],['gear','cart','Gear'],['boosts','zap','Boosts'],['gems','gem','Gems']];
+  let body = '';
+  if (STORE_TAB === 'miners'){
+    body = '<div class="sgrid">' + CFG.miners.filter(m => m.enabled !== false).map(m => {
+      const rc = (RARITY[m.rarity]||RARITY.common).c, rl = (RARITY[m.rarity]||RARITY.common).label;
+      const oc = ownedCount(m.id);
+      const earn = minerEarnings(m.power);
+      const isFree = m.free === true;
+      const activated = isFree && ST.earnings.freeMinerActivated;
+      const disc = m.discount || 0;
+      const finalPrice = disc > 0 ? Math.round((m.costTon * (1 - disc/100)) * 1000) / 1000 : m.costTon;
+      return '<div class="card scard" style="border-color:' + rc + '44' + (isFree ? ';border-width:2px;box-shadow:0 0 16px rgba(52,211,153,.15)' : '') + '">'
+        + (isFree ? '<span class="own" style="color:var(--good);border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.1)">FREE</span>' : oc ? '<span class="own">OWNED x' + oc + '</span>' : '')
+        + (disc > 0 ? '<span class="own" style="color:var(--bad);border-color:rgba(248,113,113,.4);top:10px;left:10px;right:auto">-' + disc + '%</span>' : '')
+        + '<div class="sico">' + minerSVG(rc) + '</div>'
+        + '<div class="bn">' + esc(m.name) + '</div>'
+        + '<span class="tag" style="color:' + rc + '">' + rl + '</span>'
+        + '<span class="pchip ic-ore">' + I('zap') + '+' + (Math.round(m.power*10)/10) + ' ' + O + '/s</span>'
+        + '<div class="pchips">'
+          + '<span class="pchip ic-ton" style="font-size:9px">' + I('clock') + fmt(earn.perHour) + '/h</span>'
+          + '<span class="pchip ic-ton" style="font-size:9px">' + I('ore') + fmt(earn.perDay) + '/24h</span>'
+          + '<span class="pchip ic-ton" style="font-size:9px">' + I('star') + fmt(earn.perMonth) + '/30d</span>'
+          + '<span class="pchip ic-ton" style="font-size:9px;color:var(--accent2)">~' + fmtTon(earn.tonMonth) + ' TON/30d</span>'
+        + '</div>'
+        + (isFree
+          ? (activated
+            ? '<button class="btn sm ghost block" disabled>' + I('check') + 'Activated</button>'
+            : '<button class="btn sm block pulse" data-act="activate-free-miner">' + I('gift') + 'Activate Free</button>')
+          : '<button class="btn sm tonb block" data-act="buy" data-kind="miner" data-id="' + m.id + '">' + I('ton') + (disc > 0 ? '<s style="opacity:.5">' + fmtTon(m.costTon) + '</s> ' : '') + fmtTon(finalPrice) + ' TON</button>')
+        + '<div class="xs mut" style="text-align:center;margin-top:4px;font-size:8px">ID: ' + esc(m.id) + '</div>'
+        + (isFree ? '<div class="note xs" style="color:var(--good);text-align:center;margin-top:2px">Mines ~0.01 TON/day for free!</div>' : '')
+      + '</div>';
+    }).join('') + '</div>';
+  } else if (STORE_TAB === 'gear'){
+    body = '<div class="sgrid">' + CFG.gear.filter(g => g.enabled !== false).map(g => {
+      const icon = g.slot === 'pickaxe' ? 'pick' : (g.slot === 'lamp' ? 'lamp' : 'cart');
+      const owned = ST.gearOwned.includes(g.id);
+      const equipped = ST.gearEquipped[g.slot] === g.id;
+      return '<div class="card scard">'
+        + (equipped ? '<span class="own" style="color:var(--good);border-color:rgba(52,211,153,.4)">EQUIPPED</span>' : owned ? '<span class="own">OWNED</span>' : '')
+        + '<div class="sico">' + I(icon) + '</div>'
+        + '<div class="bn">' + esc(g.name) + '</div>'
+        + '<span class="td mut xs">' + esc(g.desc || '') + '</span>'
+        + priceChips(g, 'gear')
+        + (owned ? '<button class="btn sm ghost block" disabled>' + I('check') + 'In inventory</button>'
+                 : '<button class="btn sm block" data-act="buy" data-kind="gear" data-id="' + g.id + '">Buy</button>')
+      + '</div>';
+    }).join('') + '</div>';
+  } else if (STORE_TAB === 'boosts'){
+    const bm = boostMult(), bActive = (ST.boostUntil||0) > Date.now();
+    body = (bActive ? '<div class="card mb10 row"><span class="bchip">' + I('zap') + '<span class="num" data-cd="' + ST.boostUntil + '">--</span></span><span class="td mut sm">Current boost running at x' + bm + '</span></div>' : '')
+      + '<div class="sgrid">' + (CFG.mining.boosts||[]).filter(b => b.enabled !== false).map(b =>
+        '<div class="card scard">'
+        + '<div class="sico">' + I('zap') + '</div>'
+        + '<div class="bn">' + esc(b.name) + '</div>'
+        + '<span class="td mut xs">' + esc(b.desc || '') + ' - ' + b.minutes + ' min</span>'
+        + '<span class="tag" style="color:var(--good)">x' + b.mult + ' SPEED</span>'
+        + priceChips(b, 'boost')
+        + '<button class="btn sm block" data-act="boost-buy" data-id="' + b.id + '">Activate</button>'
+      + '</div>').join('') + '</div>';
+  } else {
+    body = '<div class="sgrid">' + (CFG.gemPacks||[]).filter(p => p.enabled !== false).map(p => {
+      const total = p.gems + Math.round(p.gems * (p.bonusPercent||0) / 100);
+      return '<div class="card scard" style="border-color:rgba(232,121,249,.35)">'
+        + '<div class="sico">' + I('gem') + '</div>'
+        + '<div class="bn">' + esc(p.label || (total + ' ' + G)) + '</div>'
+        + '<span class="pchip ic-gem">' + I('gem') + fmt(total) + ' ' + G + (p.bonusPercent ? ' <span class="mut">(+~' + p.bonusPercent + '%)</span>' : '') + '</span>'
+        + priceChips(p, 'gems')
+        + '<button class="btn sm tonb block" data-act="buy" data-kind="gems" data-id="' + p.id + '">' + I('ton') + 'Buy with TON</button>'
+      + '</div>';
+    }).join('') + '</div>'
+    + '<div class="note mt10" style="text-align:center">Purchases are paid in TON via TON Connect, direct transfer or manual payment.</div>';
+  }
+  return '<div class="tabs">' + tabs.map(t =>
+    '<button class="tab' + (STORE_TAB === t[0] ? ' on' : '') + '" data-act="store-tab" data-t="' + t[0] + '">' + I(t[1]) + t[2] + '</button>'
+  ).join('') + '</div>' + body;
+}
+
+/* ================================ 12. SCREEN: MORE ================================ */
+function rMore(){
+  const name = USER ? USER.name : 'Guest Miner';
+  const uname = USER && USER.username ? '@' + USER.username : (USER ? 'ID ' + USER.id : 'Open via Telegram for profile sync');
+  return ''
+  + '<div class="card pmini" data-act="open-page" data-p="profile">'
+    + (USER && USER.photo ? '<img class="avatar" src="' + esc(USER.photo) + '">' : '<span class="avatar">' + avatarSVG(name) + '</span>')
+    + '<div class="grow"><div class="pn">' + esc(name) + '</div><div class="pu">' + esc(uname) + '</div></div>'
+    + '<div class="lvbadge"><b>' + ST.level + '</b><span>LEVEL</span></div>'
+  + '</div>'
+  + '<div class="stitle">My wallet</div>'
+  + '<div class="mrow" data-act="open-page" data-p="wallet"><div class="mico cy">' + I('wallet') + '</div>'
+    + '<div class="mt2"><b>Wallet</b><span>Balance, instant swap, deposits, TON wallet</span></div>' + I('chevR','chev') + '</div>'
+  + '<div class="mrow" data-act="open-page" data-p="history"><div class="mico">' + I('history') + '</div>'
+    + '<div class="mt2"><b>Transactions</b><span>' + (ST.pay.length + ST.wd.length) + ' records</span></div>' + I('chevR','chev') + '</div>'
+  + '<div class="stitle">App</div>'
+  + '<div class="mrow" data-act="open-page" data-p="settings"><div class="mico">' + I('gear') + '</div>'
+    + '<div class="mt2"><b>Settings</b><span>Interface, sound, save data</span></div>' + I('chevR','chev') + '</div>'
+  + '<div class="mrow" data-act="open-page" data-p="about"><div class="mico gr">' + I('info') + '</div>'
+    + '<div class="mt2"><b>About</b><span>How it works, terms</span></div>' + I('chevR','chev') + '</div>'
+  + '<div class="mrow" data-act="support"><div class="mico cy">' + I('send') + '</div>'
+    + '<div class="mt2"><b>Support</b><span>Contact the team</span></div>' + I('chevR','chev') + '</div>'
+  + '<div class="mrow" data-act="exit-app"><div class="mico rd">' + I('logout') + '</div>'
+    + '<div class="mt2"><b>Exit app</b><span>Close and return to Telegram</span></div>' + I('chevR','chev') + '</div>'
+  + '<div class="note mt14" style="text-align:center">' + esc(CFG.app.name) + ' v2.0.0' + (CFG_CUSTOM ? ' - custom config active' : '') + '</div>';
+}
+const VIEWS = { mine: rMine, tasks: rTasks, friends: rFriends, store: rStore, more: rMore };
+
+/* ================================ 13. SUB PAGES ================================ */
+const PAGES = {};
+const PAGES_ON = {};
+
+function earningsWalletSection(){
+  const E = earningsCfg();
+  const active = getActivePurchaseBoosts();
+  const refundBal = ST.earnings.refundBalance || 0;
+  const totalPurchased = ST.earnings.totalPurchased || 0;
+  const boostPct = getPurchaseBoostPct();
+  let html = ''
+  + '<div class="stitle">Earnings & Boosts</div>'
+  + '<div class="card">'
+    + '<div class="row between"><div class="grow"><div class="tt sm">' + I('zap','ic-ton') + ' Active boost</div>'
+    + '<div class="td mut xs mt6">+' + boostPct + '% mining speed from ' + active.length + ' active purchase' + (active.length !== 1 ? 's' : '') + '</div></div>'
+    + '<span class="tag" style="color:var(--good);border-color:rgba(52,211,153,.4)">+' + boostPct + '%</span></div>'
+    + (active.length ? '<div class="hr"></div>' + active.slice(0, 5).map(b =>
+        '<div class="wrow divd"><span class="mut xs">+' + E.purchaseBoostPercent + '% from ' + fmtTon(b.amountTon) + ' TON</span>'
+        + '<b class="num xs" style="color:var(--accent2)"><span data-cd="' + b.expiresAt + '">--</span> left</b></div>'
+      ).join('') : '<div class="note xs mt6">No active boosts. Purchase with TON to get +' + E.purchaseBoostPercent + '% for ' + E.purchaseBoostDays + ' days.</div>')
+  + '</div>'
+
+  + '<div class="card mt10">'
+    + '<div class="row between"><div class="grow"><div class="tt sm">' + I('ton','ic-ton') + ' Refund balance</div>'
+    + '<div class="td mut xs mt6">TON refunded after ' + E.purchaseBoostDays + '-day boost expiry</div></div>'
+    + '<b class="num" style="color:var(--accent2);font-size:18px">' + fmtTon(refundBal) + ' TON</b></div>'
+    + (E.refundWithdrawalEnabled !== false && refundBal > 0
+      ? '<button class="btn tonb block mt10" data-act="withdraw-refund">' + I('send') + 'Withdraw ' + fmtTon(refundBal) + ' TON</button>'
+      : '<div class="note xs mt6">Refunds appear here after your boost periods expire.</div>')
+  + '</div>'
+
+  + '<div class="card mt10 row" style="padding:11px 14px">'
+    + '<div class="mico cy">' + I('history') + '</div>'
+    + '<div class="grow"><b class="tt xs">Total TON purchased</b><div class="td mut xs">Lifetime purchases that earned boosts</div></div>'
+    + '<b class="num" style="color:var(--accent)">' + fmtTon(totalPurchased) + ' TON</b>'
+  + '</div>';
+
+  return html;
+}
+
+PAGES.wallet = function(){
+  const O = CFG.currency.ore.name, G = CFG.currency.gem.name;
+  const W = CFG.economy.withdraw, rate = CFG.economy.orePerTon;
+  const feePct = W.feePercent||0;
+  const connected = TCUI && TCUI.connected && WALLET;
+  const gemOn = CFG.currency.gem && CFG.currency.gem.enabled !== false;
+  const SW = CFG.swap || {};
+  const swapOn = SW.enabled !== false && gemOn && ((SW.oreToGem||{}).enabled !== false || (SW.gemToOre||{}).enabled !== false);
+  return ''
+  + '<div class="card">'
+    + '<div class="hlab mut">Total balance</div>'
+    + '<div class="hbal" style="font-size:26px">' + I('ore','ic-ore') + '<span class="num">' + fmt(ST.ore) + '</span><span class="hcur">' + O + '</span></div>'
+    + '<div class="row mt6" style="gap:6px;flex-wrap:wrap">'
+      + '<span class="mchip">~' + fmtTon(ST.ore/rate) + ' TON</span>'
+      + (CFG.currency.gem && CFG.currency.gem.enabled !== false ? '<span class="mchip" style="color:var(--gem);border-color:rgba(232,121,249,.4)">' + fmt(ST.gems) + ' ' + G + '</span>' : '')
+      + '<span class="mchip">1 TON = ' + fmt(rate) + ' ' + O + '</span>'
+    + '</div>'
+  + '</div>'
+
+  + '<div class="stitle">TON wallet</div>'
+  + '<div class="card">'
+    + (connected
+      ? '<div class="row between"><div class="grow" style="min-width:0"><div class="tt sm">' + I('ton','ic-ton') + ' ' + esc((WALLET.device && WALLET.device.app) || 'TON wallet') + '</div>'
+        + '<div class="td mut xs mt6 num">' + esc(shortAddr(WALLET.account.address)) + (TB_TONBAL != null ? ' - ' + fmtTon(TB_TONBAL) + ' TON' : '') + '</div></div>'
+        + '<button class="btn sm danger" data-act="wc-disconnect">Disconnect</button></div>'
+      : '<div class="row between"><div class="grow" style="min-width:0"><div class="tt sm">' + I('ton','ic-ton') + ' TON Connect</div><div class="td mut xs mt6">Connect your wallet to pay, swap and receive TON.</div></div>'
+        + '<button class="btn sm tonb" data-act="wc-connect">Connect</button></div>')
+  + '</div>'
+
+  + (swapOn ? swapSectionHTML(O, G) : '')
+
+  + (W.enabled !== false
+  ? '<div class="stitle">Withdraw ' + O + '</div>'
+  + '<div class="card">'
+    + '<div class="note">' + esc(W.instructions || '') + ' Processing time: ' + esc(W.processing || '24-72h') + '.' + (W.minOre ? ' Minimum: ' + fmt(W.minOre) + ' ' + O + '.' : '') + (feePct ? ' Fee: ' + feePct + '%.' : '') + '</div>'
+    + '<label class="lb">Amount (' + O + ')</label>'
+    + '<div class="row"><input class="inp num" id="wdAmt" type="number" inputmode="decimal" placeholder="0">'
+    + '<button class="btn sm ghost" data-act="wd-max">MAX</button></div>'
+    + '<label class="lb">TON wallet address</label>'
+    + '<input class="inp" id="wdAddr" placeholder="UQ..." value="' + (connected ? esc(WALLET.account.address) : '') + '" spellcheck="false">'
+    + '<div class="wrow divd mt10"><span class="mut">Fee (' + feePct + '%)</span><b class="num" id="wdFee">0</b></div>'
+    + '<div class="wrow divd"><span class="mut">You receive</span><b class="num" id="wdGet" style="color:var(--accent2)">0 TON</b></div>'
+    + '<button class="btn block mt10" data-act="wd-submit">' + I('send') + 'Request withdrawal</button>'
+  + '</div>'
+  + (ST.wd.length ? '<div class="stitle">My requests</div>' + ST.wd.slice(0,8).map(w =>
+      '<div class="card row mb10" style="padding:11px 14px"><div class="grow">'
+      + '<div class="tt sm num">' + fmt(w.amountOre) + ' ' + O + ' - ' + fmtTon(w.amountTon) + ' TON</div>'
+      + '<div class="td mut xs">' + shortAddr(w.address) + ' - ' + new Date(w.ts).toLocaleDateString() + '</div></div>'
+      + '<span class="wtag" style="color:' + (w.status === 'paid' ? 'var(--good)' : w.status === 'rejected' ? 'var(--bad)' : 'var(--accent)') + ';border-color:currentColor">' + esc(w.status || 'pending') + '</span></div>'
+    ).join('') : '')
+  : '')
+
+  + (CFG.economy.deposit && CFG.economy.deposit.enabled !== false
+  ? '<div class="stitle">Deposit address</div>'
+  + '<div class="card"><div class="note mb10">Send TON to the project address for manual top-ups. Include your user ID <b class="num">' + (USER ? USER.id : 0) + '</b> in the comment.</div>'
+    + '<div class="codebox">' + esc(CFG.economy.deposit.address) + '</div>'
+    + '<button class="btn sm ghost block mt10" data-act="copy" data-copy="' + esc(CFG.economy.deposit.address) + '">' + I('copy') + 'Copy address</button>'
+  + '</div>' : '')
+
+  + (earningsCfg().enabled !== false ? earningsWalletSection() : '');
+};
+PAGES_ON.wallet = function(el){ updWalletUI = refreshWallet; bindWdCalc(el); bindSwapCalc(el); };
+function refreshWallet(){
+  const pg = NAVSTACK.find(n => n.id === 'wallet');
+  if (!pg) return;
+  pg.el.innerHTML = PAGES.wallet();
+  bindWdCalc(pg.el); bindSwapCalc(pg.el);
+}
+
+/* ---------- instant swap ---------- */
+let SWAP_DIR = 'o2g', SWAP_KEEP = { amt:'' }, TB_TONBAL = null, TB_BAL_TS = 0;
+function swapRates(){
+  const SW = CFG.swap || {};
+  const o2g = SWAP_DIR === 'o2g';
+  const rcfg = o2g ? (SW.oreToGem||{}) : (SW.gemToOre||{});
+  return { o2g, rate: Number(rcfg.rate)||0, fee: Number(SW.feePercent)||0 };
+}
+function swapSectionHTML(O, G){
+  const SW = CFG.swap || {};
+  const o2g = SWAP_DIR === 'o2g';
+  const r = swapRates();
+  const minTxt = o2g ? (SW.minOre||1) : (SW.minGem||1);
+  return ''
+  + '<div class="stitle">Instant swap</div>'
+  + '<div class="card">'
+    + '<div class="swap-dir">'
+      + '<button class="sdir' + (o2g ? ' on' : '') + '" data-act="swap-dir" data-d="o2g">' + I('ore') + '<span>' + esc(O) + ' → ' + esc(G) + '</span></button>'
+      + '<button class="sdir' + (!o2g ? ' on' : '') + '" data-act="swap-dir" data-d="g2o">' + I('gem') + '<span>' + esc(G) + ' → ' + esc(O) + '</span></button>'
+    + '</div>'
+    + (r.rate <= 0
+      ? '<div class="note mt10">Swap is temporarily unavailable - the rate is not configured.</div>'
+      : ''
+      + '<label class="lb">You swap (' + (o2g ? esc(O) : esc(G)) + ') - min ' + fmt(minTxt) + '</label>'
+      + '<div class="row"><input class="inp num" id="swapIn" type="number" inputmode="decimal" placeholder="0" value="' + esc(SWAP_KEEP.amt || '') + '">'
+      + '<button class="btn sm ghost" data-act="swap-max">MAX</button></div>'
+      + '<div class="wrow divd mt10"><span class="mut">Rate</span><b class="num" id="swapRateTxt">1 ' + esc(G) + ' = ' + fmt(r.rate) + ' ' + esc(O) + '</b></div>'
+      + '<div class="wrow divd"><span class="mut">Fee (' + r.fee + '%)</span><b class="num" id="swapFeeTxt">0</b></div>'
+      + '<div class="wrow divd"><span class="mut">You receive</span><b class="num" id="swapOutTxt" style="color:var(--good)">0 ' + (o2g ? esc(G) : esc(O)) + '</b></div>'
+      + '<button class="btn block mt10" data-act="swap-do">' + I('refresh') + 'Swap now</button>'
+      + '<div class="note mt10" style="text-align:center">Swaps are instant and update your in-app balance. Rates are set by the operator.</div>')
+  + '</div>';
+}
+function bindSwapCalc(){
+  const amt = $('#swapIn'); if (!amt) return;
+  const upd = () => {
+    SWAP_KEEP.amt = amt.value;
+    const O = CFG.currency.ore.name, G = CFG.currency.gem.name;
+    const r = swapRates();
+    const v = Math.max(0, Number(amt.value)||0);
+    const fee = v * r.fee / 100;
+    const out = r.rate > 0 ? (r.o2g ? Math.floor((v - fee) / r.rate) : Math.floor((v - fee) * r.rate)) : 0;
+    const f = $('#swapFeeTxt'), o = $('#swapOutTxt');
+    if (f) f.textContent = fmt(fee) + ' ' + (r.o2g ? O : G);
+    if (o) o.textContent = fmt(out) + ' ' + (r.o2g ? G : O);
+  };
+  amt.addEventListener('input', upd); upd();
+}
+function doSwap(el){
+  const SW = CFG.swap || {};
+  if (SW.enabled === false) return;
+  const O = CFG.currency.ore.name, G = CFG.currency.gem.name;
+  const r = swapRates();
+  if (r.rate <= 0){ toast('Swap rate is not configured', 'err'); sfx('err'); return; }
+  const amt = Math.floor(Number(($('#swapIn')||{}).value)||0);
+  if (r.o2g){
+    if (amt < (SW.minOre||1)){ toast('Minimum swap is ' + fmt(SW.minOre||1) + ' ' + O, 'err'); sfx('err'); return; }
+    if (amt > ST.ore){ toast('Not enough ' + O, 'err', 'ore'); sfx('err'); return; }
+    const fee = amt * r.fee / 100;
+    const out = Math.floor((amt - fee) / r.rate);
+    if (out < 1){ toast('Amount too small to swap', 'err'); sfx('err'); return; }
+    ST.ore -= amt; ST.gems += out;
+    swapHistory(O + ' to ' + G, fmt(amt) + ' ' + O + ' to ' + fmt(out) + ' ' + G);
+    toast('Swapped ' + fmt(amt) + ' ' + O + ' for ' + fmt(out) + ' ' + G, 'gold', 'refresh');
+  } else {
+    if (amt < (SW.minGem||1)){ toast('Minimum swap is ' + fmt(SW.minGem||1) + ' ' + G, 'err'); sfx('err'); return; }
+    if (amt > ST.gems){ toast('Not enough ' + G, 'err', 'gem'); sfx('err'); return; }
+    const fee = amt * r.fee / 100;
+    const out = Math.floor((amt - fee) * r.rate);
+    if (out < 1){ toast('Amount too small to swap', 'err'); sfx('err'); return; }
+    ST.gems -= amt; ST.ore += out;
+    swapHistory(G + ' to ' + O, fmt(amt) + ' ' + G + ' to ' + fmt(out) + ' ' + O);
+    toast('Swapped ' + fmt(amt) + ' ' + G + ' for ' + fmt(out) + ' ' + O, 'gold', 'refresh');
+  }
+  sfx('buy'); hapOk(); confettiEl(el, 40);
+  save(); updChips(true);
+  SWAP_KEEP.amt = '';
+  refreshWallet(); checkAch();
+}
+function swapHistory(item, note){
+  const rec = { id: uid(), ts: Date.now(), userId: USER?USER.id:0, userName: USER?USER.name:'Guest',
+    kind: 'swap', item, method: 'swap', amountTon: 0, currency: 'INAPP', status: 'paid', txHash: '', note };
+  ST.pay.unshift(rec); ST.pay = ST.pay.slice(0, 50);
+  const arr = LS.get('cp_events', []);
+  arr.unshift({ ts: rec.ts, type: 'swap', userId: rec.userId, userName: rec.userName, data: { item, note } });
+  LS.set('cp_events', arr.slice(0, 200));
+}
+function bindWdCalc(){
+  const amt = $('#wdAmt'); if (!amt) return;
+  const upd = () => {
+    const v = Math.max(0, Number(amt.value)||0);
+    const fee = v * (CFG.economy.withdraw.feePercent||0) / 100;
+    const get = (v - fee) / (CFG.economy.orePerTon||1);
+    const f = $('#wdFee'), g = $('#wdGet');
+    if (f) f.textContent = fmt(fee) + ' ' + CFG.currency.ore.name;
+    if (g) g.textContent = fmtTon(get) + ' TON';
+  };
+  amt.addEventListener('input', upd); upd();
+}
+
+PAGES.history = function(){
+  const items = []
+    .concat(ST.pay.map(p => ({ ts:p.ts, icon:p.kind === 'gems' ? 'gem' : p.kind === 'boost' ? 'zap' : p.kind === 'swap' ? 'refresh' : 'store', t:p.item, s:p.method === 'manual' ? 'manual review' : p.method, r:p.amountTon ? p.amountTon + ' TON' : (p.note || 'in-app'), st:p.status })))
+    .concat(ST.wd.map(w => ({ ts:w.ts, icon:'wallet', t:'Withdrawal', s:shortAddr(w.address), r:w.amountTon + ' TON', st:w.status })))
+    .sort((a,b) => b.ts - a.ts);
+  if (!items.length) return '<div class="card" style="text-align:center;margin-top:20%"><div class="td mut">No transactions yet.</div></div>';
+  return items.slice(0, 40).map(x =>
+    '<div class="card row mb10" style="padding:12px 14px">'
+    + '<div class="mico" style="width:36px;height:36px">' + I(x.icon) + '</div>'
+    + '<div class="grow"><div class="tt sm">' + esc(x.t) + '</div>'
+    + '<div class="td mut xs">' + esc(x.s) + ' - ' + new Date(x.ts).toLocaleString() + '</div></div>'
+    + '<div style="text-align:right"><div class="tt sm num">' + esc(x.r) + '</div>'
+    + '<div class="xs mut" style="color:' + (x.st === 'paid' ? 'var(--good)' : 'var(--accent)') + '">' + esc(x.st || '') + '</div></div>'
+    + '</div>').join('');
+};
+
+PAGES.settings = function(){
+  const p = prefs();
+  const accents = ['#f5b942','#22d3ee','#4ade80','#a78bfa','#f87171'];
+  const sw = (k, label, desc, key) =>
+    '<div class="tg-row"><div><div class="tt2">' + label + '</div><div class="td2">' + desc + '</div></div>'
+    + '<span class="switch' + (p[key] !== false ? ' on' : '') + '" data-act="pref" data-k="' + key + '"></span></div>';
+  return ''
+  + '<div class="stitle" style="margin-top:4px">Interface</div>'
+  + '<div class="card" style="padding:4px 14px">'
+    + sw('h','Haptic feedback','Vibration on taps and rewards','haptics')
+    + sw('s','Sound effects','Tones for claims, buys and level ups','sfx')
+    + sw('a','Animations','Full motion interface','animations')
+  + '</div>'
+  + '<div class="stitle">Accent color</div>'
+  + '<div class="card row" style="gap:10px">' + accents.map(c =>
+      '<span class="sw' + (p.accent === c ? ' on' : '') + '" style="background:' + c + '" data-act="accent" data-c="' + c + '"></span>').join('')
+    + '<span class="note grow" style="text-align:right">Accent and secondary colors can be preset by the control panel too.</span></div>'
+  + '<div class="stitle">Save data</div>'
+  + '<div class="card">'
+    + '<div class="tt sm">Export save</div>'
+    + '<textarea class="inp mt10" id="expTxt" rows="3" readonly>' + esc(JSON.stringify(ST)) + '</textarea>'
+    + '<button class="btn sm ghost block mt10" data-act="copy" data-copy-src="expTxt">' + I('copy') + 'Copy save string</button>'
+    + '<div class="tt sm mt14">Import save</div>'
+    + '<textarea class="inp mt10" id="impTxt" rows="3" placeholder="Paste save string here"></textarea>'
+    + '<button class="btn sm ghost block mt10" data-act="import-save">' + I('refresh') + 'Import and reload</button>'
+    + '<hr class="hr">'
+    + '<button class="btn danger sm block" data-act="reset-app">' + I('alert') + 'Reset all progress</button>'
+  + '</div>'
+  + '<div class="stitle">Operator</div>'
+  + '<div class="card"><div class="note">This mini app reads its full configuration from localStorage key <b>cp_config</b>. Commands can be pushed via <b>cp_inbox</b>. TON Connect reads <b>tonconnect-manifest.json</b> from the app origin by default - override it with cp_config → payments.tonconnect.manifestUrl. → swap. See the source header of index.html for the complete contract.</div></div>';
+};
+
+PAGES.profile = function(){
+  const name = USER ? USER.name : 'Guest Miner';
+  const pct = clamp(ST.xp / levelNeed(ST.level) * 100, 0, 100);
+  const O = CFG.currency.ore.name;
+  const achs = [
+    { id:'a1', n:'First vein', ic:'pick', c: ST.stats.veins >= 1 },
+    { id:'a2', n:'Crew of 3', ic:'friends', c: Object.keys(ST.miners).length >= 3 },
+    { id:'a3', n:'10K mined', ic:'ore', c: ST.stats.mined >= 1e4 },
+    { id:'a4', n:'Deep diver', ic:'layers', c: ST.mapId !== CFG.maps[0].id },
+    { id:'a5', n:'Toolmaster', ic:'cart', c: ST.gearOwned.length >= 3 },
+    { id:'a6', n:'Taskrunner', ic:'tasks', c: ST.stats.tasks >= 3 },
+    { id:'a7', n:'100K mined', ic:'star', c: ST.stats.mined >= 1e5 },
+    { id:'a8', n:'Vein crusher',ic:'zap', c: ST.stats.veins >= 100 },
+    { id:'a9', n:'First buy', ic:'store', c: ST.stats.buys >= 1 },
+    { id:'a10',n:'Full crew', ic:'shield', c: Object.keys(ST.miners).length >= 6 },
+    { id:'a11',n:'Streak 7', ic:'flame', c: (ST.daily.streak||0) >= 7 },
+    { id:'a12',n:'Millionaire', ic:'gem', c: ST.stats.mined >= 1e6 }
+  ];
+  return ''
+  + '<div class="pcard">'
+    + '<div class="row" style="gap:14px">'
+      + '<div class="lvring" style="--p:' + pct + '"><div><b>' + ST.level + '</b><span>LEVEL</span></div></div>'
+      + '<div class="grow">'
+        + (USER && USER.photo ? '<img class="avatar" style="width:48px;height:48px" src="' + esc(USER.photo) + '">' : '')
+        + '<div class="pn" style="font-size:16px;font-weight:800">' + esc(name) + '</div>'
+        + '<div class="pu mut xs mt6">' + (USER && USER.username ? '@' + esc(USER.username) : 'ID ' + (USER ? USER.id : '-')) + '</div>'
+        + '<div class="pu mut xs">Mining since ' + new Date(ST.createdAt).toLocaleDateString() + '</div>'
+      + '</div>'
+    + '</div>'
+    + '<div class="st-grid mt14">'
+      + '<div class="card st-tile"><b class="num" style="color:var(--accent)">' + fmt(ST.stats.mined) + '</b><span>' + O + ' mined</span></div>'
+      + '<div class="card st-tile"><b class="num" style="color:var(--accent2)">' + fmt(ST.stats.veins) + '</b><span>Veins broken</span></div>'
+      + '<div class="card st-tile"><b class="num" style="color:var(--good)">' + ST.stats.days + '</b><span>Days active</span></div>'
+    + '</div>'
+  + '</div>'
+  + '<div class="stitle">Crew</div>'
+  + '<div class="st-grid">'
+    + '<div class="card st-tile"><b class="num">' + Object.keys(ST.miners).length + '</b><span>Miners</span></div>'
+    + '<div class="card st-tile"><b class="num">' + ST.gearOwned.length + '</b><span>Gear</span></div>'
+    + '<div class="card st-tile"><b class="num" style="color:var(--gem)">' + ST.stats.buys + '</b><span>Purchases</span></div>'
+  + '</div>'
+  + '<div class="stitle">Achievements<span class="st-x">' + achs.filter(a => a.c).length + '/' + achs.length + '</span></div>'
+  + '<div class="agrid">' + achs.map(a =>
+      '<div class="card ach' + (a.c ? ' un' : ' lock') + '">' + I(a.ic) + '<b>' + a.n + '</b></div>').join('')
+  + '</div>'
+  + '<div class="stitle">Referral</div>'
+  + '<div class="card"><div class="row between"><div><div class="tt sm">Invite code</div><div class="codebox mt10" style="display:inline-block">' + esc(ST.friends.code) + '</div></div>'
+    + '<button class="btn sm" data-act="share-ref">' + I('share') + 'Invite</button></div></div>';
+};
+
+PAGES.about = function(){
+  return ''
+  + '<div class="card" style="text-align:center;padding:22px">'
+    + '<div style="width:74px;height:74px;margin:0 auto 12px">' + logoSVG('') + '</div>'
+    + '<div class="tt" style="font-size:18px;letter-spacing:.1em">' + esc(CFG.app.name) + '</div>'
+    + '<div class="td mut mt6">' + esc(CFG.app.tagline) + '</div>'
+  + '</div>'
+  + '<div class="stitle">About</div>'
+  + '<div class="card"><div class="note" style="font-size:12.5px">' + esc(CFG.pages.about || '') + '</div></div>'
+  + '<div class="stitle">Terms</div>'
+  + '<div class="card"><div class="note" style="font-size:12.5px">' + esc(CFG.pages.terms || '') + '</div></div>'
+  + '<div class="stitle">Links</div>'
+  + '<div class="mrow" data-act="support"><div class="mico cy">' + I('send') + '</div><div class="mt2"><b>Support channel</b><span>' + esc(CFG.app.supportUrl) + '</span></div>' + I('chevR','chev') + '</div>'
+  + '<div class="note mt10" style="text-align:center">Powered by TON - v2.0.0</div>';
+};
+
+/* ================================ 14. SHEETS ================================== */
+let PM = null; // current checkout payload
+let PM_METHOD = 'tonconnect';
+
+function sheetField(i){
+  const f = ST.fields[i]; if (!f || !f.miner) return;
+  const inst = ST.miners[f.miner]; const def = CFG.miners.find(d => d.id === inst.id); if (!def) return;
+  const rc = (RARITY[def.rarity]||RARITY.common).c;
+  const cost = upgradeCost(def, inst.level);
+  const O = CFG.currency.ore.name;
+  const earn = minerEarnings(minerPower(inst, def));
+  openSheet(
+    '<div class="row" style="gap:12px"><div style="width:52px;height:52px">' + minerSVG(rc) + '</div>'
+    + '<div class="grow"><div class="sh-t">' + esc(def.name) + ' <span class="mchip">L' + (inst.level||1) + '</span></div>'
+    + '<div class="td mut">Power ' + (Math.round(minerPower(inst, def)*10)/10) + ' ' + O + '/s - Miner ID: ' + esc(def.id) + '</div></div></div>'
+    + '<div class="st-grid mt10">'
+    + '<div class="card st-tile"><b class="num" style="color:var(--accent)">' + fmt(earn.perHour) + '</b><span>per hour</span></div>'
+    + '<div class="card st-tile"><b class="num" style="color:var(--accent2)">' + fmt(earn.perDay) + '</b><span>per 24h</span></div>'
+    + '<div class="card st-tile"><b class="num" style="color:var(--good)">' + fmt(earn.perWeek) + '</b><span>per week</span></div>'
+    + '<div class="card st-tile"><b class="num" style="color:var(--gem)">' + fmt(earn.perMonth) + '</b><span>per 30 days</span></div>'
+    + '</div>'
+    + '<div class="row mt10" style="gap:6px;flex-wrap:wrap">'
+    + '<span class="mchip">~' + fmtTon(earn.tonDay) + ' TON/24h</span>'
+    + '<span class="mchip">~' + fmtTon(earn.tonWeek) + ' TON/7d</span>'
+    + '<span class="mchip">~' + fmtTon(earn.tonMonth) + ' TON/30d</span>'
+    + '</div>'
+    + (cost > 0
+      ? '<div class="row mt14">'
+      + '<button class="btn tonb grow" data-act="upgrade-miner" data-u="' + f.miner + '">' + I('ton') + 'Upgrade - ' + fmtTon(cost) + ' TON</button>'
+      + '<button class="btn ghost sm" data-act="unassign" data-i="' + i + '" data-u="' + f.miner + '">' + I('x') + 'Unassign</button>'
+      + '</div>'
+      + '<div class="note mt10">Each level adds +' + Math.round((CFG.mining.upgradePowerStep||.22)*100) + '% power. Upgrades require TON only.</div>'
+      : '<div class="row mt14"><button class="btn ghost sm grow" disabled>' + I('lock') + 'Cannot upgrade</button>'
+      + '<button class="btn ghost sm" data-act="unassign" data-i="' + i + '" data-u="' + f.miner + '">' + I('x') + 'Unassign</button></div>'
+      + '<div class="note mt10" style="color:var(--mut)">Free miners cannot be upgraded. Purchase a TON miner to upgrade.</div>')
+  );
+}
+function sheetAssign(i){
+  const free = Object.keys(ST.miners).filter(k => !ST.miners[k].field);
+  if (!free.length){
+    openSheet('<div class="sh-t">Assign miner</div><div class="note">Every owned miner is already working. Hire more miners in the store.</div>'
+      + '<button class="btn block mt10" data-act="close-top" data-after="store">Open store</button>');
+    return;
+  }
+  openSheet('<div class="sh-t">Assign miner</div><div class="note mb10">Pick a miner for dig site ' + (i+1) + '.</div>'
+    + free.map(k => {
+      const inst = ST.miners[k]; const def = CFG.miners.find(d => d.id === inst.id);
+      if (!def) return '';
+      const rc = (RARITY[def.rarity]||RARITY.common).c;
+      return '<div class="mrow" data-act="assign" data-i="' + i + '" data-u="' + k + '" style="margin-bottom:8px">'
+        + '<div style="width:40px;height:40px;flex:none">' + minerSVG(rc) + '</div>'
+        + '<div class="mt2"><b>' + esc(def.name) + ' <span class="mut">L' + (inst.level||1) + '</span></b><span>' + (Math.round(minerPower(inst,def)*10)/10) + ' ' + CFG.currency.ore.name + '/s base</span></div>'
+        + I('chevR','chev') + '</div>';
+    }).join(''));
+}
+function sheetMaps(){
+  openSheet('<div class="sh-t">Mine maps</div><div class="note mb10">Deeper maps multiply everything you mine.</div>'
+    + CFG.maps.filter(m => m.enabled !== false).map(m => {
+      const unlockedByLevel = ST.level >= m.reqLevel;
+      const owned = ST.mapsOwned ? ST.mapsOwned.includes(m.id) : (m.costOre === 0);
+      const active = ST.mapId === m.id;
+      const canBuy = unlockedByLevel && !owned && ST.ore >= (m.costOre||0);
+      let right = '';
+      if (active) right = '<span class="wtag" style="color:var(--accent2);border-color:rgba(34,211,238,.4)">ACTIVE</span>';
+      else if (owned && unlockedByLevel) right = '<button class="btn sm" data-act="map-switch" data-id="' + m.id + '">Switch</button>';
+      else if (!unlockedByLevel) right = '<span class="wtag" style="color:var(--mut);border-color:var(--line)">' + I('lock') + ' LV ' + m.reqLevel + '</span>';
+      else right = '<button class="btn sm' + (canBuy ? '' : ' ghost') + '" ' + (canBuy ? 'data-act="map-unlock" data-id="' + m.id + '"' : 'disabled') + '>' + I('ore') + fmt(m.costOre) + '</button>';
+      return '<div class="mrow" style="margin-bottom:8px">'
+        + '<div class="mico" style="background:linear-gradient(140deg,' + m.theme.sky1 + ',' + m.theme.sky2 + ');color:' + m.theme.crystal + '">' + I('layers') + '</div>'
+        + '<div class="mt2"><b>' + esc(m.name) + '</b><span>' + esc(m.sub || '') + ' - x' + m.mult + ' output</span></div>'
+        + right + '</div>';
+    }).join(''));
+  if (!ST.mapsOwned) ST.mapsOwned = CFG.maps.filter(m => (m.costOre||0) === 0).map(m => m.id);
+}
+function sheetBoost(id){
+  const b = (CFG.mining.boosts||[]).find(x => x.id === id); if (!b) return;
+  const G = CFG.currency.gem.name;
+  const bActive = (ST.boostUntil||0) > Date.now();
+  openSheet('<div class="sh-t">' + esc(b.name) + '</div>'
+    + '<div class="note">' + esc(b.desc || '') + ' for ' + b.minutes + ' minutes.' + (bActive ? ' Activating again replaces the current boost.' : '') + '</div>'
+    + (b.priceGem ? '<button class="btn block mt14" data-act="boost-gem" data-id="' + b.id + '">' + I('gem') + 'Pay ' + fmt(b.priceGem) + ' ' + G + '</button>' : '')
+    + (b.priceTon ? '<button class="btn tonb block mt10" data-act="boost-ton" data-id="' + b.id + '">' + I('ton') + 'Pay ' + fmtTon(b.priceTon) + ' TON</button>' : '')
+    + '<div class="note mt10" style="text-align:center">TON payments support TON Connect, direct transfer or manual payment.</div>');
+}
+function sheetPayment(pm){
+  PM = pm; PM_METHOD = CFG.payments.tonconnect.enabled ? 'tonconnect' : (CFG.payments.direct.enabled ? 'direct' : 'manual');
+  const connected = TCUI && TCUI.connected && WALLET;
+  const mrow = (id, icon, title, desc, on) =>
+    '<div class="pm' + (PM_METHOD === id ? ' on' : '') + '" data-act="pay-method" data-m="' + id + '">'
+    + '<div class="pico">' + I(icon) + '</div><div class="grow"><div class="pt2">' + title + '</div><div class="pd">' + desc + '</div></div><span class="radio"></span></div>';
+  let methods = '';
+  if (CFG.payments.tonconnect.enabled) methods += mrow('tonconnect','ton','TON Connect', connected ? 'Wallet connected' : 'Pay from your wallet', true);
+  if (CFG.payments.direct.enabled) methods += mrow('direct','send','Direct transfer','Send exact amount to project wallet', true);
+  if (CFG.payments.manual.enabled) methods += mrow('manual','shield','Manual payment','Pay manually and submit proof', true);
+  openSheet('<div class="sh-t">Checkout</div><div id="paySummary"></div>'
+    + '<label class="lb">Payment method</label><div id="payMethods">' + methods + '</div>'
+    + '<div id="payBody"></div>');
+  renderPayBody();
+}
+function renderPayBody(){
+  if (!PM) return;
+  const O = CFG.currency.ore.name, G = CFG.currency.gem.name;
+  const sum = $('#paySummary'), body = $('#payBody');
+  if (!sum || !body) return;
+  let itemName = PM.label || 'Purchase';
+  if (PM.kind === 'miner'){ const d = CFG.miners.find(x => x.id === PM.id); itemName = d ? d.name : 'Miner'; }
+  else if (PM.kind === 'gear'){ const d = CFG.gear.find(x => x.id === PM.id); itemName = d ? d.name : 'Gear'; }
+  else if (PM.kind === 'boost'){ const d = (CFG.mining.boosts||[]).find(x => x.id === PM.id); itemName = d ? d.name : 'Boost'; }
+  else if (PM.kind === 'upgrade'){ const d = CFG.miners.find(x => x.id === PM.id); itemName = 'Upgrade ' + (d ? d.name : 'Miner'); }
+  else if (PM.kind === 'gems'){ const d = CFG.gemPacks.find(x => x.id === PM.id); itemName = d ? (d.label || 'Gem pack') : 'Gem pack'; }
+  const amount = PM.amountTon || 0;
+  sum.innerHTML = '<div class="card row" style="padding:12px"><div class="mico">' + I(PM.kind === 'gems' ? 'gem' : PM.kind === 'boost' ? 'zap' : PM.kind === 'upgrade' ? 'zap' : 'store') + '</div>'
+    + '<div class="grow"><div class="tt sm">' + esc(itemName) + '</div><div class="td mut xs">' + (PM.kind === 'gems' ? fmt(PM.gems||0) + ' ' + G : 'Digital item') + '</div></div>'
+    + '<b class="num" style="color:var(--accent2)">' + fmtTon(amount) + ' TON</b></div>';
+  $$('#payMethods .pm').forEach(el => el.classList.toggle('on', el.dataset.m === PM_METHOD));
+  const connected = TCUI && TCUI.connected && WALLET;
+  if (PM_METHOD === 'manual'){
+    // Build transaction comment (miner ID + user ID) for manual payment
+    const txComment = PM.id ? minerTxComment(PM.id) : (PM.label || 'purchase') + '_' + (USER && USER.id ? USER.id : 'anon');
+    body.innerHTML = '<div class="note mt10">' + esc(CFG.payments.manual.instructions || '') + '</div>'
+      + '<label class="lb">Send to address</label><div class="codebox">' + esc(CFG.payments.direct.address) + '</div>'
+      + '<button class="btn sm ghost block mt10" data-act="copy" data-copy="' + esc(CFG.payments.direct.address) + '">' + I('copy') + 'Copy address</button>'
+      + '<label class="lb">Amount to send (TON)</label>'
+      + '<div class="row"><div class="codebox grow" style="font-size:14px;font-weight:800;color:var(--accent2)">' + fmtTon(amount) + ' TON</div>'
+      + '<button class="btn sm ghost" data-act="copy" data-copy="' + fmtTon(amount) + '">' + I('copy') + 'Copy</button></div>'
+      + '<label class="lb">Transaction comment / memo (Miner ID + User ID)</label>'
+      + '<div class="row"><div class="codebox grow" style="font-size:11px">' + esc(txComment) + '</div>'
+      + '<button class="btn sm ghost" data-act="copy" data-copy="' + esc(txComment) + '">' + I('copy') + 'Copy</button></div>'
+      + '<div class="note xs mt6">Include this comment in your TON transfer so we can identify your purchase.</div>'
+      + '<label class="lb">Transaction hash</label><input class="inp" id="payTx" placeholder="Paste TX hash after sending" spellcheck="false">'
+      + '<button class="btn block mt10" data-act="pay-manual">' + I('send') + 'Submit for review</button>'
+      + '<div class="note mt10" style="text-align:center">Need help? <span style="color:var(--accent2);cursor:pointer" data-act="support">Contact support</span></div>';
+  } else {
+    const autoMemo = PM.kind === 'miner' && PM.id ? minerTxComment(PM.id)
+      : PM.kind === 'upgrade' && PM.id ? 'upgrade_' + PM.id + '_' + (USER && USER.id ? USER.id : 'anon')
+      : '';
+    body.innerHTML = '<div class="card mt10 row">'
+      + (connected ? I('check','ic-ore') + '<span class="td sm">Wallet connected: ' + esc(shortAddr(WALLET.account.address)) + '</span>'
+                   : I('info','ic-ton') + '<span class="td sm grow">A TON wallet connection will be requested.</span>')
+      + '</div>'
+      + '<button class="btn tonb block mt10" data-act="pay-go">' + I('ton') + 'Pay ' + fmtTon(amount) + ' TON</button>'
+      + (autoMemo ? '<div class="codebox mt10" style="font-size:10px;text-align:center">Memo: ' + esc(autoMemo) + '</div><div class="note xs mt6" style="text-align:center">Miner ID + User ID sent as transaction comment</div>' : '')
+      + '<div class="note mt10" style="text-align:center">Exact amount is prefilled in your wallet. Item is delivered instantly after signing.</div>';
+  }
+}
+
+/* offline welcome sheet */
+function sheetOffline(off){
+  const O = CFG.currency.ore.name;
+  openSheet('<div class="sh-t">Welcome back, boss</div>'
+    + '<div class="note">Your crew kept digging while you were away (' + durTxt(off.secs*1000) + ' at ' + Math.round((CFG.mining.offlineEfficiency||.6)*100) + '% efficiency).</div>'
+    + '<div class="card mt10" style="text-align:center;padding:18px">'
+    + '<div style="width:60px;height:60px;margin:0 auto 8px;color:var(--accent)">' + I('ore') + '</div>'
+    + '<div class="hbal" style="font-size:26px;justify-content:center">+' + fmt(off.ore) + ' <span class="hcur">' + O + '</span></div>'
+    + '<div class="td mut xs mt6">' + fmt(off.rate) + ' ' + O + '/s base rate</div>'
+    + '</div>'
+    + '<button class="btn block pulse mt14" data-act="collect-offline">' + I('gift') + 'Collect ' + fmt(off.ore) + ' ' + O + '</button>');
+}
+
+/* ================================ 15. ACTIONS ================================ */
+const ACT = {
+  'open-view': d => { closeAllTop(); go(d.v); },
+  'open-page': d => openPage(d.p),
+  'close-top': (d, el) => { const after = d.after; closeTop(); if (after){ STORE_TAB = after === 'store' ? 'miners' : STORE_TAB; go(after); } },
+  'confirm-ok': () => { closeTop(); if (CONFIRM_CB){ const cb = CONFIRM_CB; CONFIRM_CB = null; cb(); } },
+  'store-tab': d => { STORE_TAB = d.t; go('store', true); },
+  'copy': (d) => {
+    if (d.copySrc){ const el = $('#' + d.copySrc); copyText(el ? el.value : '', 'Copied'); }
+    else copyText(d.copy || '', 'Copied');
+  },
+  'support': () => openLink(CFG.app.supportUrl || 'https://telegram.org'),
+  'exit-app': () => confirmSheet('Exit app?', 'You will return to Telegram. Your crew keeps mining in the background.', 'Exit', () => {
+    try{ if (TG && TG.close) TG.close(); }catch(e){}
+    if (!TG) toast('Available inside Telegram only', 'info');
+  }, true),
+  /* tasks */
+  'task-start': (d, el) => {
+    const t = CFG.tasks.find(x => x.id === d.id); if (!t) return;
+    const stt = ST.tasks[t.id] || (ST.tasks[t.id] = {});
+    stt.start = Date.now(); saveNow(); sfx('tap'); hap('light');
+    openLink(t.url);
+    go('tasks', true);
+  },
+  'task-claim': (d, el) => {
+    const t = CFG.tasks.find(x => x.id === d.id); if (!t) return;
+    const stt = ST.tasks[t.id] || (ST.tasks[t.id] = {});
+    const now = Date.now();
+    if (t.type === 'daily' || (t.cooldownH|0) > 0){
+      const cd = (t.type === 'daily' ? 24 : (t.cooldownH|0)) * 3600 * 1000;
+      if (stt.last && now - stt.last < cd) return;
+      stt.last = now;
+    } else {
+      const vd = (CFG.tasksCfg.verifySec || 10) * 1000;
+      if (!stt.start || stt.done || now - stt.start < vd) return;
+      stt.done = true;
+    }
+    if (t.rewardOre){ ST.ore += t.rewardOre; ST.stats.mined += t.rewardOre; }
+    if (t.rewardGem) ST.gems += t.rewardGem;
+    ST.stats.tasks++;
+    save(); hapOk(); sfx('buy');
+    confettiEl(el, 46);
+    toast('Reward claimed: +' + fmt(t.rewardOre||0) + ' ' + CFG.currency.ore.name + (t.rewardGem ? ' +' + t.rewardGem + ' ' + CFG.currency.gem.name : ''), 'gold', 'gift');
+    renderNav(); go('tasks', true); checkAch();
+  },
+  /* mine interactions */
+  'field-tap': d => {
+    const f = ST.fields[+d.i]; if (!f) return;
+    if (!f.unlocked){ toast('Reach level ' + f.req + ' to unlock this dig site', 'info', 'lock'); return; }
+    hap('light');
+    if (!f.miner) sheetAssign(+d.i); else sheetField(+d.i);
+  },
+  'assign': d => {
+    const f = ST.fields[+d.i], u = d.u;
+    if (f && ST.miners[u] && !ST.miners[u].field){
+      f.miner = u; ST.miners[u].field = +d.i;
+      sfx('ok'); hapOk(); toast('Miner assigned to site ' + (+d.i + 1), 'ok', 'check');
+      save(); closeAllTop(); go('mine', true);
+    }
+  },
+  'unassign': d => {
+    const f = ST.fields[+d.i], u = d.u;
+    if (f && ST.miners[u]){ f.miner = null; ST.miners[u].field = null; save(); closeAllTop(); go('mine', true); }
+  },
+  'upgrade-miner': (d, el) => {
+    const inst = ST.miners[d.u]; if (!inst) return;
+    const def = CFG.miners.find(x => x.id === inst.id); if (!def) return;
+    if (def.noUpgrade || def.free){ toast('Free miners cannot be upgraded', 'err'); sfx('err'); return; }
+    const cost = upgradeCost(def, inst.level);
+    if (cost <= 0){ toast('Cannot upgrade this miner', 'err'); sfx('err'); return; }
+    // Upgrade via TON payment
+    sheetPayment({ kind:'upgrade', id: def.id, amountTon: cost, label: 'Upgrade ' + def.name + ' L' + ((inst.level||1)+1), minerUid: d.u });
+  },
+  'map-open': () => sheetMaps(),
+  'map-switch': d => {
+    if (ST.mapsOwned && ST.mapsOwned.includes(d.id)){ ST.mapId = d.id; sfx('ok'); save(); closeAllTop(); go('mine', true); toast('Moved to ' + (MAP().name), 'ok', 'layers'); }
+  },
+  'map-unlock': (d, el) => {
+    const m = CFG.maps.find(x => x.id === d.id); if (!m) return;
+    if (ST.level < m.reqLevel){ toast('Reach level ' + m.reqLevel + ' first', 'err', 'lock'); return; }
+    if (ST.ore < (m.costOre||0)){ toast('Not enough ' + CFG.currency.ore.name, 'err', 'ore'); sfx('err'); return; }
+    ST.ore -= m.costOre||0;
+    ST.mapsOwned = ST.mapsOwned || CFG.maps.filter(x => (x.costOre||0) === 0).map(x => x.id);
+    ST.mapsOwned.push(m.id); ST.mapId = m.id;
+    sfx('level'); hapOk(); confettiEl(el, 60);
+    toast('New map unlocked: ' + m.name, 'gold', 'layers');
+    save(); closeAllTop(); go('mine', true); checkAch();
+  },
+  'boost-open': () => {
+    const b = (CFG.mining.boosts||[]).find(x => x.enabled !== false);
+    if (b) sheetBoost(b.id); else toast('No boosts configured', 'info');
+  },
+  'boost-buy': d => sheetBoost(d.id),
+  'boost-gem': (d, el) => {
+    const b = (CFG.mining.boosts||[]).find(x => x.id === d.id); if (!b) return;
+    if (ST.gems < (b.priceGem||0)){ toast('Not enough ' + CFG.currency.gem.name, 'err', 'gem'); sfx('err'); return; }
+    ST.gems -= b.priceGem||0;
+    ST.boostUntil = Date.now() + b.minutes*60000; ST.boostMult = b.mult;
+    sfx('buy'); hapOk(); confettiEl(el, 44);
+    toast(b.name + ' active for ' + b.minutes + ' min', 'ok', 'zap');
+    save(); closeAllTop(); go('mine', true);
+  },
+  'boost-ton': d => {
+    const b = (CFG.mining.boosts||[]).find(x => x.id === d.id); if (!b) return;
+    sheetPayment({ kind:'boost', id:b.id, amountTon:b.priceTon||0, label:b.name });
+  },
+  /* store purchases */
+  'buy': (d, el) => buyItem(d.kind, d.id, el),
+  /* Activate free starter miner - gives 0.01 gram/day */
+  'activate-free-miner': (d, el) => {
+    if (ST.earnings.freeMinerActivated){
+      toast('Free miner already activated', 'info');
+      return;
+    }
+    const freeDef = CFG.miners.find(m => m.free === true);
+    if (!freeDef){
+      toast('Free miner not available', 'err'); return;
+    }
+    addMiner(freeDef);
+    ST.earnings.freeMinerActivated = true;
+    sfx('level'); hapOk(); confettiEl(el, 50);
+    toast('Free Starter Miner activated! Mines ~0.01 TON/day for free', 'gold', 'gift');
+    save(); go('store', true); updChips(true);
+  },
+  /* daily */
+  'daily-claim': (d, el) => {
+    const now = Date.now();
+    if (now - (ST.daily.last||0) < 24*3600*1000) return;
+    const within = now - (ST.daily.last||0) <= 48*3600*1000;
+    ST.daily.streak = within ? (ST.daily.streak||0) + 1 : 1;
+    const mult = Math.min(1 + Math.max(0, ST.daily.streak-1) * (CFG.daily.streakStep||.25), CFG.daily.streakCapMult||3);
+    const ore = Math.round((CFG.daily.baseOre||500) * mult);
+    const gem = (CFG.daily.baseGem||0) + Math.floor(ST.daily.streak/3);
+    ST.ore += ore; ST.stats.mined += ore; ST.gems += gem; ST.daily.last = now;
+    sfx('level'); hapOk(); confettiEl(el, 64);
+    toast('Day ' + ST.daily.streak + ' chest: +' + fmt(ore) + ' ' + CFG.currency.ore.name + (gem ? ' +' + gem + ' ' + CFG.currency.gem.name : ''), 'gold', 'gift');
+    save(); go('mine', true); checkAch();
+  },
+  'collect-offline': (d, el) => {
+    if (window.__OFFLINE__){ ST.ore += window.__OFFLINE__.ore; ST.stats.mined += window.__OFFLINE__.ore; window.__OFFLINE__ = null; }
+    sfx('buy'); hapOk(); confettiEl(el, 70);
+    save(); closeAllTop(); go('mine', true); checkAch();
+  },
+  /* wallet */
+  'wd-max': () => { const a = $('#wdAmt'); if (a){ a.value = Math.floor(ST.ore); a.dispatchEvent(new Event('input')); } },
+  'wd-submit': (d, el) => {
+    const W = CFG.economy.withdraw;
+    if (W.enabled === false) return;
+    const amt = Math.floor(Number(($('#wdAmt')||{}).value) || 0);
+    const addr = (($('#wdAddr')||{}).value || '').trim();
+    if (amt < (W.minOre||0)){ toast('Minimum withdrawal is ' + fmt(W.minOre) + ' ' + CFG.currency.ore.name, 'err'); sfx('err'); return; }
+    if (amt > ST.ore){ toast('Not enough ' + CFG.currency.ore.name, 'err'); sfx('err'); return; }
+    if (addr.length < 20){ toast('Enter a valid TON address', 'err'); sfx('err'); return; }
+    const fee = amt * (W.feePercent||0) / 100;
+    ST.ore -= amt;
+    const rec = { id: uid(), ts: Date.now(), userId: USER?USER.id:0, userName: USER?USER.name:'Guest', address: addr, amountOre: amt, fee: Math.round(fee), amountTon: (amt-fee)/(CFG.economy.orePerTon||1), status:'pending' };
+    ST.wd.unshift(rec); ST.wd = ST.wd.slice(0, 30);
+    const arr = LS.get('cp_withdrawals', []); arr.unshift(rec); LS.set('cp_withdrawals', arr.slice(0, 300));
+    logEvent('withdrawal', rec);
+    sfx('ok'); hapOk(); confettiEl(el, 40);
+    toast('Withdrawal request submitted', 'ok', 'check');
+    save(); closeAllTop(); openPage('wallet');
+  },
+  /* EARNINGS: withdraw refund balance */
+  'withdraw-refund': (d, el) => {
+    const E = earningsCfg();
+    if (E.refundWithdrawalEnabled === false){ toast('Refund withdrawal disabled', 'err'); return; }
+    const bal = ST.earnings.refundBalance || 0;
+    if (bal <= 0){ toast('No refund balance to withdraw', 'err'); return; }
+    const connected = TCUI && TCUI.connected && WALLET;
+    const addr = connected ? WALLET.account.address : '';
+    openSheet('<div class="sh-t">Withdraw TON refund</div>'
+      + '<div class="note">You have <b style="color:var(--accent2)">' + fmtTon(bal) + ' TON</b> in refund balance from expired purchase boosts.</div>'
+      + '<label class="lb">TON wallet address</label>'
+      + '<input class="inp" id="rfAddr" placeholder="UQ..." value="' + esc(addr) + '" spellcheck="false">'
+      + '<button class="btn tonb block mt10" data-act="refund-submit">' + I('send') + 'Withdraw ' + fmtTon(bal) + ' TON</button>'
+      + '<div class="note mt10" style="text-align:center">Refund withdrawals are processed manually within 24-72h.</div>');
+  },
+  'refund-submit': (d, el) => {
+    const addr = (($('#rfAddr')||{}).value || '').trim();
+    const bal = ST.earnings.refundBalance || 0;
+    if (bal <= 0){ toast('No refund balance', 'err'); return; }
+    if (addr.length < 20){ toast('Enter a valid TON address', 'err'); sfx('err'); return; }
+    const rec = { id: uid(), ts: Date.now(), userId: USER?USER.id:0, userName: USER?USER.name:'Guest',
+      address: addr, amountOre: 0, fee: 0, amountTon: bal, status: 'pending', type: 'refund' };
+    ST.wd.unshift(rec); ST.wd = ST.wd.slice(0, 30);
+    ST.earnings.refundBalance = 0;
+    const arr = LS.get('cp_withdrawals', []); arr.unshift(rec); LS.set('cp_withdrawals', arr.slice(0, 300));
+    logEvent('refund_withdrawal', rec);
+    sfx('ok'); hapOk(); confettiEl(el, 40);
+    toast('Refund withdrawal submitted: ' + fmtTon(bal) + ' TON', 'ok', 'check');
+    save(); closeAllTop(); openPage('wallet');
+  },
+  'wc-connect': async () => {
+    try{
+      const c = await ensureTC();
+      await c.openModal();
+    }catch(e){
+      sfx('err');
+      toast(e && e.message ? e.message : 'TON Connect unavailable - check manifest URL', 'err');
+    }
+  },
+  'wc-disconnect': async () => {
+    try{ if (TCUI) await TCUI.disconnect(); }catch(e){}
+    WALLET = null; TB_TONBAL = null; updWalletDot();
+    toast('Wallet disconnected', 'info'); closeAllTop(); openPage('wallet');
+  },
+  /* swap */
+  'swap-dir': d => { if (SWAP_DIR !== d.d){ SWAP_DIR = d.d; SWAP_KEEP.amt = ''; refreshWallet(); sfx('tap'); } },
+  'swap-max': () => {
+    const a = $('#swapIn'); if (!a) return;
+    const r = swapRates();
+    a.value = Math.floor(r.o2g ? ST.ore : ST.gems);
+    a.dispatchEvent(new Event('input'));
+  },
+  'swap-do': (d, el) => doSwap(el),
+  /* payments */
+  'pay-method': d => { PM_METHOD = d.m; renderPayBody(); },
+  'pay-go': async (d, el) => {
+    if (!PM) return;
+    el.disabled = true;
+    try{
+      // Build transaction comment: {minerId}_{userId} for miner purchases and upgrades
+      let comment = '';
+      if (PM.kind === 'miner' && PM.id){ comment = minerTxComment(PM.id); }
+      else if (PM.kind === 'upgrade' && PM.id){ comment = 'upgrade_' + PM.id + '_' + (USER && USER.id ? USER.id : 'anon'); }
+      else if (PM.label){ comment = PM.label + '_' + (USER && USER.id ? USER.id : 'anon'); }
+      const r = await sendTon(PM.amountTon || 0, comment);
+      const rec = recordPay(PM, 'tonconnect', PM.amountTon, { status:'pending', txHash:'boc:' + String(r && r.boc ? r.boc : '').slice(0, 26), comment: comment });
+      grantItem(PM.kind, PM.id);
+      PM = null;
+      sfx('level'); hapOk(); confettiEl(el, 70);
+      toast('Payment sent - item delivered', 'gold', 'check');
+      closeAllTop(); renderNav();
+    }catch(e){
+      el.disabled = false;
+      if (String(e && e.message).toLowerCase().includes('not connected')){ /* modal canceled */ }
+      else toast(e && e.message ? e.message : 'Payment canceled', 'err');
+    }
+  },
+  'pay-manual': (d, el) => {
+    if (!PM) return;
+    const tx = (($('#payTx')||{}).value || '').trim();
+    if (CFG.payments.manual.requireTxHash && tx.length < 8){ toast('Paste your transaction hash first', 'err'); sfx('err'); return; }
+    // Include miner ID + user ID as comment in the payment record
+    const comment = PM.id ? (PM.kind === 'upgrade' ? 'upgrade_' + PM.id + '_' : minerTxComment(PM.id)) : (PM.label || 'purchase') + '_' + (USER && USER.id ? USER.id : 'anon');
+    recordPay(PM, 'manual', PM.amountTon, { status:'pending', txHash: tx, comment: comment });
+    grantItem(PM.kind, PM.id);
+    PM = null;
+    sfx('ok'); hap('medium');
+    toast('Submitted - the team will verify shortly', 'ok', 'clock');
+    closeAllTop(); renderNav();
+  },
+  /* settings */
+  'pref': d => { setPref(d.k, !(prefs()[d.k] !== false)); sfx('tap'); const pg = NAVSTACK.find(n => n.id === 'settings'); if (pg) pg.el.innerHTML = PAGES.settings(); },
+  'accent': d => { setPref('accent', d.c); sfx('tap'); const pg = NAVSTACK.find(n => n.id === 'settings'); if (pg) pg.el.innerHTML = PAGES.settings(); },
+  'import-save': () => {
+    const v = ($('#impTxt')||{}).value || '';
+    try{
+      const obj = JSON.parse(v);
+      if (!obj || typeof obj !== 'object') throw new Error('bad');
+      ST = obj; ensureState(); save(); toast('Save imported', 'ok'); closeAllTop(); renderAll();
+    }catch(e){ toast('Invalid save string', 'err'); sfx('err'); }
+  },
+  'reset-app': () => confirmSheet('Reset progress?', 'All miners, gear and balances will be wiped. This cannot be undone.', 'Reset everything', () => {
+    LS.del('cp_state'); try{ if (TG && TG.CloudStorage) TG.CloudStorage.setItem('cp_state', ''); }catch(e){}
+    try{ if (window.FB){ const uid = fbUserId(); window.FB.set(window.FB.ref(window.FB.db, 'users/' + uid + '/state'), null); } }catch(e){}
+    location.reload();
+  }, true),
+  /* friends */
+  'share-ref': () => {
+    const link = refLink();
+    const text = 'Join me in ' + CFG.app.name + ' - build a mining crew and earn ' + CFG.currency.ore.name + '.';
+    try{ if (TG){ TG.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + encodeURIComponent(text)); return; } }catch(e){}
+    copyText(link, 'Invite link copied');
+  }
+};
+function buyItem(kind, id, el){
+  const E = earningsCfg();
+  let it = null, ton = 0;
+  if (kind === 'miner'){ it = CFG.miners.find(x => x.id === id); ton = it && it.costTon || 0; }
+  else if (kind === 'gear'){ it = CFG.gear.find(x => x.id === id); ton = it && it.costTon || 0; }
+  else if (kind === 'gems'){ it = CFG.gemPacks.find(x => x.id === id); ton = it && it.priceTon || 0; }
+  if (!it) return;
+  // TON-only purchases when earnings system is enabled
+  if (E.tonOnlyPurchases !== false){
+    if (ton <= 0){ toast('This item can only be purchased with TON', 'err', 'ton'); sfx('err'); return; }
+    sheetPayment({ kind, id, amountTon: ton, label: it.label || it.name, gems: kind === 'gems' ? it.gems : 0 });
+    return;
+  }
+  // Fallback: legacy ore/gem path (only when tonOnlyPurchases is disabled by control panel)
+  const O = CFG.currency.ore.name, G = CFG.currency.gem.name;
+  let ore = 0, gem = 0;
+  if (kind === 'miner'){ ore = it.costOre||0; gem = it.costGem||0; }
+  else if (kind === 'gear'){ ore = it.costOre||0; gem = it.costGem||0; }
+  if (ton > 0){ sheetPayment({ kind, id, amountTon: ton, label: it.label || it.name, gems: kind === 'gems' ? it.gems : 0 }); return; }
+  if (ST.ore < ore){ toast('Not enough ' + O, 'err', 'ore'); sfx('err'); return; }
+  if (gem > 0 && ST.gems < gem){ toast('Not enough ' + G, 'err', 'gem'); sfx('err'); return; }
+  ST.ore -= ore; ST.gems -= gem;
+  grantItem(kind, id);
+  ST.stats.buys++;
+  recordPay({ kind, id, label: it.name }, ore ? 'ore' : 'gem', 0, { status:'paid', note: (ore ? fmt(ore) + ' ' + O : '') + (gem ? (ore ? ' + ' : '') + fmt(gem) + ' ' + G : '') });
+  sfx('buy'); hapOk(); confettiEl(el, 50);
+  save(); renderNav(); checkAch();
+}
+function logEvent(type, data){
+  const arr = LS.get('cp_events', []);
+  arr.unshift({ ts: Date.now(), type, userId: USER?USER.id:0, userName: USER?USER.name:'Guest', data });
+  LS.set('cp_events', arr.slice(0, 200));
+}
+
+/* ================================ 16. ENGINE ================================== */
+function spawnVein(f){
+  const md = MAP();
+  const pool = (md.loots && md.loots.length) ? md.loots : ['stone'];
+  const hp = CFG.mining.veinHPBase * md.hpMult;
+  f.vein = { type: pool[ri(0, pool.length-1)], hp, hpMax: hp };
+  f.respawnAt = 0;
+}
+function breakVein(f, i){
+  const md = MAP();
+  const val = CFG.mining.veinValueBase * md.mult * (0.8 + Math.random()*0.5) * (1 + gearVal('bonusLoot'));
+  const t = f.vein.type;
+  ST.ore += val; ST.stats.mined += val; ST.stats.veins++;
+  ST.xp += val * (CFG.economy.xpPerOre || 0.05);
+  FEED.unshift({ t, val, ts: Date.now() }); FEED = FEED.slice(0, 8);
+  if (VIEW === 'mine'){
+    floatOre(i, val);
+    const fr = $('#feedRow'); if (fr) fr.innerHTML = feedHTML();
+  }
+  if (Math.random() < (CFG.mining.gemDropChance||0)){
+    const gm = CFG.mining.gemDropAmount || [1,1];
+    const g = ri(gm[0], gm[1]);
+    ST.gems += g;
+    if (VIEW === 'mine') toast('+' + g + ' ' + CFG.currency.gem.name + ' found in the vein', 'gold', 'gem');
+  }
+  f.vein = null;
+  f.respawnAt = Date.now() + ri(CFG.mining.respawnMin||6, CFG.mining.respawnMax||16) * 1000;
+  checkLevel();
+}
+function checkLevel(){
+  let up = false;
+  while (ST.xp >= levelNeed(ST.level)){
+    ST.xp -= levelNeed(ST.level);
+    ST.level++; up = true;
+    ST.gems += 2;
+    toast('Level up! Now level ' + ST.level + ' (+2 ' + CFG.currency.gem.name + ')', 'gold', 'star');
+  }
+  if (up){
+    sfx('level'); hapOk(); confettiAt(130, 160, 60);
+    rebuildFields();
+    save(); renderNav();
+    if (VIEW === 'mine') go('mine', true);
+  }
+}
+let ACH_T = 0;
+function tick(){
+  try{
+    const now = Date.now();
+    const md = MAP(); if (!md) return;
+    const bm = boostMult(), pb = gearVal('bonus');
+    const purchaseBoost = getPurchaseBoostMult();
+    let gained = 0;
+    ST.fields.forEach((f, i) => {
+      if (!f.unlocked || !f.miner) return;
+      const inst = ST.miners[f.miner]; if (!inst) return;
+      const def = CFG.miners.find(x => x.id === inst.id); if (!def) return;
+      if (!f.vein){
+        if (!f.respawnAt || now >= f.respawnAt) spawnVein(f);
+        else return;
+      }
+      const p = minerPower(inst, def) * md.mult * (1 + pb) * bm * (1 + purchaseBoost);
+      ST.ore += p; gained += p;
+      f.vein.hp -= p;
+      if (f.vein.hp <= 0) breakVein(f, i);
+    });
+    if (gained > 0){
+      ST.stats.mined += gained;
+      ST.xp += gained * (CFG.economy.xpPerOre || 0.05);
+      checkLevel();
+    }
+    if (VIEW === 'mine') mineTickDom();
+    ACH_T++;
+    if (ACH_T % 5 === 0) checkAch();
+    if (ACH_T % 5 === 0){ checkExpiredBoosts(); }
+  }catch(e){ /* keep the loop alive */ }
+}
+function mineTickDom(){
+  if (!MINE_ELS) return;
+  ST.fields.forEach((f, i) => {
+    const bar = MINE_ELS.bars[String(i)];
+    if (bar && f.vein) bar.style.width = clamp(f.vein.hp / f.vein.hpMax * 100, 0, 100) + '%';
+    const resp = document.querySelector('[data-fresp="' + i + '"] span');
+    if (resp && !f.vein && f.respawnAt) resp.textContent = durTxt(f.respawnAt - Date.now());
+  });
+  const bc = $('#boostCd');
+  if (bc){
+    const bActive = (ST.boostUntil||0) > Date.now();
+    if (bActive) bc.textContent = 'x' + (ST.boostMult||1) + ' - ' + durTxt(ST.boostUntil - Date.now());
+  }
+}
+function checkAch(){
+  const conds = {
+    a1: ST.stats.veins >= 1, a2: Object.keys(ST.miners).length >= 3, a3: ST.stats.mined >= 1e4,
+    a4: ST.mapId !== CFG.maps[0].id, a5: ST.gearOwned.length >= 3, a6: ST.stats.tasks >= 3,
+    a7: ST.stats.mined >= 1e5, a8: ST.stats.veins >= 100, a9: ST.stats.buys >= 1,
+    a10: Object.keys(ST.miners).length >= 6, a11: (ST.daily.streak||0) >= 7, a12: ST.stats.mined >= 1e6
+  };
+  const names = { a1:'First vein', a2:'Crew of 3', a3:'10K mined', a4:'Deep diver', a5:'Toolmaster', a6:'Taskrunner', a7:'100K mined', a8:'Vein crusher', a9:'First buy', a10:'Full crew', a11:'Streak 7', a12:'Millionaire' };
+  let got = 0;
+  for (const k in conds){
+    if (conds[k] && !ST.ach[k]){ ST.ach[k] = Date.now(); got++; }
+  }
+  if (got){ save(); if (VIEW === 'mine') {} toast('Achievement unlocked', 'gold', 'trophy'); sfx('ok'); }
+}
+
+/* ================================ 17. RAF (smooth numbers + countdowns) ================================ */
+const DISP = { ore: 0, frame: 0 };
+function raf(){
+  DISP.frame++;
+  const slow = DISP.frame % 12 === 0;
+  DISP.ore += (ST.ore - DISP.ore) * .25;
+  if (Math.abs(ST.ore - DISP.ore) < .6) DISP.ore = ST.ore;
+  const bal = fmt(DISP.ore);
+  const hb = $('#heroBal'); if (hb && hb.textContent !== bal) hb.textContent = bal;
+  if (slow){
+    updChips();
+    $$('[data-cd]').forEach(el => {
+      const left = (+el.dataset.cd) - Date.now();
+      if (left > 0) el.textContent = durTxt(left);
+      else if (!el.dataset.done){ el.dataset.done = '1'; if (VIEW === 'mine' || VIEW === 'tasks') go(VIEW, true); }
+    });
+  }
+  requestAnimationFrame(raf);
+}
+let CHIP_LAST = { ore:'', gem:'', lvl:'' };
+function updChips(force){
+  const o = fmt(ST.ore), g = CFG.currency.gem && CFG.currency.gem.enabled !== false ? fmt(ST.gems) : '', l = 'LV ' + ST.level;
+  const co = $('#tbOre'), cg = $('#tbGem'), cl = $('#tbLvl');
+  if (co && (force || o !== CHIP_LAST.ore)){
+    co.textContent = o;
+    const bx = co.closest('.tb-bal'); if (bx) pop(bx);
+    CHIP_LAST.ore = o;
+  }
+  if (cg && (force || g !== CHIP_LAST.gem)){ cg.innerHTML = I('gem') + '<span class="num">' + esc(g) + '</span>'; CHIP_LAST.gem = g; }
+  if (cl && (force || l !== CHIP_LAST.lvl)){ cl.innerHTML = I('star') + '<span class="num">' + esc(l) + '</span>'; CHIP_LAST.lvl = l; }
+  const rp = $('#tbRate');
+  if (rp) rp.innerHTML = I('zap') + '<span class="num">+' + fmt(totalRate()*60) + '/min</span>';
+  const rateEl = $('#heroRate');
+  if (rateEl) rateEl.textContent = '+' + fmt(totalRate()*60) + ' ' + CFG.currency.ore.name + ' / min';
+  const xpb = $('#heroXpBar');
+  if (xpb) xpb.style.width = clamp(ST.xp / levelNeed(ST.level) * 100, 0, 100) + '%';
+  const xpt = $('#heroXpT');
+  if (xpt) xpt.textContent = fmt(ST.xp) + '/' + fmt(levelNeed(ST.level));
+}
+function pop(el){ el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+
+/* ================================ 18. TELEGRAM + TON CONNECT ================================ */
+function initTG(){
+  if (!TG) return;
+  try{ TG.ready(); }catch(e){}
+  try{ TG.expand(); }catch(e){}
+  if (CFG.ui.fullscreen && TG.requestFullscreen){ try{ TG.requestFullscreen(); }catch(e){} }
+  try{ if (TG.setHeaderColor) TG.setHeaderColor('#0b0f1a'); }catch(e){}
+  try{ if (TG.setBackgroundColor) TG.setBackgroundColor('#0b0f1a'); }catch(e){}
+  try{ if (TG.enableClosingConfirmation) TG.enableClosingConfirmation(); }catch(e){}
+  try{
+    const u = TG.initDataUnsafe && TG.initDataUnsafe.user;
+    if (u) USER = { id: u.id, name: [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Miner', username: u.username || '', photo: u.photo_url || '' };
+    const sp = TG.initDataUnsafe && TG.initDataUnsafe.start_param;
+    if (sp && String(sp).indexOf('ref_') === 0 && String(sp).slice(4) !== ST.friends.code){
+      ST.friends.referredBy = String(sp).slice(4);
+      save();
+    }
+  }catch(e){}
+  try{
+    const setVh = () => {
+      const h = TG.viewportStableHeight || (TG.viewportHeight || window.innerHeight);
+      document.documentElement.style.setProperty('--vh', Math.max(h, 480) + 'px');
+    };
+    setVh();
+    if (TG.onEvent) TG.onEvent('viewportChanged', setVh);
+  }catch(e){}
+  try{
+    if (TG.BackButton) TG.BackButton.onClick(() => {
+      hap('light');
+      if (NAVSTACK.length) closeTop();
+      else if (CFG.ui.backButtonExit && TG.close) TG.close();
+    });
+  }catch(e){}
+  updateBack();
+}
+let updWalletUI = null;
+function tcManifestUrl(){
+  let u = (CFG.payments && CFG.payments.tonconnect && CFG.payments.tonconnect.manifestUrl) || '';
+  if (!u || String(u).indexOf('your-domain.com') !== -1) u = location.origin + '/tonconnect-manifest.json';
+  return u;
+}
+/* The CDN UMD build of @tonconnect/ui exposes the global TON_CONNECT_UI.
+   Some builds/older versions expose TonConnectUI - support both. */
+function tcSDK(){ return window.TON_CONNECT_UI || window.TonConnectUI || null; }
+function loadTonScript(){
+  return new Promise((res, rej) => {
+    if (tcSDK()) return res();
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/@tonconnect/ui@2/dist/tonconnect-ui.min.js';
+    s.onload = () => {
+      let n = 0;
+      const t = setInterval(() => {
+        if (tcSDK()){ clearInterval(t); res(); }
+        else if (++n > 40){ clearInterval(t); rej(new Error('TON Connect SDK failed to initialize')); }
+      }, 50);
+    };
+    s.onerror = () => rej(new Error('TON Connect SDK failed to load - check internet connection'));
+    document.head.appendChild(s);
+  });
+}
+async function ensureTC(){
+  await loadTonScript();
+  const SDK = tcSDK();
+  if (!SDK || !SDK.TonConnectUI) throw new Error('TON Connect SDK unavailable');
+  if (!TCUI){
+    try{
+      TCUI = new SDK.TonConnectUI({ manifestUrl: tcManifestUrl() });
+      TCUI.onStatusChange(w => {
+        WALLET = w; TB_TONBAL = null; TB_BAL_TS = 0;
+        updWalletDot();
+        if (w && updWalletUI) updWalletUI();
+        if (w && w.account && CFG.payments.tonconnect.showBalance !== false){
+          fetchTonBalance(w.account.address).then(b => { if (b != null && updWalletUI) updWalletUI(); });
+        }
+      });
+    }catch(e){
+      TCUI = null;
+      throw new Error('TON Connect init failed: ' + (e && e.message ? e.message : 'check manifest URL'));
+    }
+  }
+  return TCUI;
+}
+async function fetchTonBalance(addr){
+  if (!addr) return null;
+  if (TB_TONBAL != null && Date.now() - TB_BAL_TS < 60000) return TB_TONBAL;
+  try{
+    const r = await fetch('https://tonapi.io/v2/accounts/' + addr, { headers: { Accept: 'application/json' } });
+    if (!r.ok) return null;
+    const j = await r.json();
+    TB_TONBAL = Math.max(0, Number(j.balance || 0) / 1e9);
+    TB_BAL_TS = Date.now();
+    return TB_TONBAL;
+  }catch(e){ return null; }
+}
+async function sendTon(amountTon, comment){
+  const c = await ensureTC();
+  if (!c.connected){ await c.connectWallet(); }
+  if (!c.connected) throw new Error('Wallet not connected');
+  const nano = BigInt(Math.round((Number(amountTon)||0) * 1e9)).toString();
+  const msg = { address: CFG.payments.direct.address, amount: nano };
+  // Include miner ID + user ID as transaction comment/memo
+  if (comment){
+    msg.payload = await encodeTonComment(comment);
+  }
+  const tx = { validUntil: Math.floor(Date.now()/1000) + 600, messages: [msg] };
+  return await c.sendTransaction(tx);
+}
+/* Encode text comment as TON cell payload (base64 BOC) for transaction memo */
+async function encodeTonComment(text){
+  try{
+    const { beginCell } = await import('https://cdn.jsdelivr.net/npm/@ton/core@0.57.0/+esm');
+    const body = beginCell().storeUint(0, 32).storeStringTail(String(text).slice(0, 120)).endCell();
+    return body.toBoc().toString('base64');
+  }catch(e){
+    // If @ton/core can't load, return null (transaction goes without comment)
+    return null;
+  }
+}
+function recordPay(pm, method, amountTon, extra){
+  extra = extra || {};
+  let itemName = pm.label || 'Purchase';
+  if (pm.kind === 'miner'){ const d = CFG.miners.find(x => x.id === pm.id); itemName = d ? d.name : itemName; }
+  else if (pm.kind === 'gear'){ const d = CFG.gear.find(x => x.id === pm.id); itemName = d ? d.name : itemName; }
+  else if (pm.kind === 'boost'){ const d = (CFG.mining.boosts||[]).find(x => x.id === pm.id); itemName = d ? d.name : itemName; }
+  else if (pm.kind === 'gems'){ const d = CFG.gemPacks.find(x => x.id === pm.id); itemName = d ? (d.label||'Gem pack') : itemName; }
+  else if (pm.kind === 'upgrade'){ const d = CFG.miners.find(x => x.id === pm.id); itemName = 'Upgrade ' + (d ? d.name : 'Miner'); }
+  const rec = { id: uid(), ts: Date.now(), userId: USER?USER.id:0, userName: USER?USER.name:'Guest',
+    kind: pm.kind, item: itemName, method, amountTon: amountTon||0, currency: 'TON',
+    status: extra.status || 'pending', txHash: extra.txHash || '', note: extra.note || '' };
+  ST.pay.unshift(rec); ST.pay = ST.pay.slice(0, 50);
+  const arr = LS.get('cp_payments', []); arr.unshift(rec); LS.set('cp_payments', arr.slice(0, 300));
+  logEvent('purchase', rec);
+  return rec;
+}
+function grantItem(kind, id){
+  if (kind === 'miner'){
+    const d = CFG.miners.find(x => x.id === id);
+    if (d){ addMiner(d); toast(d.name + ' joined your crew', 'ok', 'check'); }
+  } else if (kind === 'gear'){
+    const d = CFG.gear.find(x => x.id === id);
+    if (d && !ST.gearOwned.includes(id)){ ST.gearOwned.push(id); equipBest(d.slot); toast(d.name + ' delivered and equipped', 'ok', 'check'); }
+  } else if (kind === 'gems'){
+    const p = CFG.gemPacks.find(x => x.id === id);
+    if (p){ const g = p.gems + Math.round(p.gems * (p.bonusPercent||0)/100); ST.gems += g; toast('+' + fmt(g) + ' ' + CFG.currency.gem.name + ' delivered', 'gold', 'gem'); }
+  } else if (kind === 'boost'){
+    const b = (CFG.mining.boosts||[]).find(x => x.id === id);
+    if (b){ ST.boostUntil = Date.now() + b.minutes*60000; ST.boostMult = b.mult; toast(b.name + ' active for ' + b.minutes + ' min', 'ok', 'zap'); }
+  } else if (kind === 'upgrade'){
+    // Upgrade miner level after TON payment
+    const minerUid = PM && PM.minerUid;
+    if (minerUid && ST.miners[minerUid]){
+      const inst = ST.miners[minerUid];
+      inst.level = (inst.level || 1) + 1;
+      const def = CFG.miners.find(x => x.id === inst.id);
+      toast((def ? def.name : 'Miner') + ' upgraded to level ' + inst.level, 'ok', 'zap');
+    }
+  }
+  // EARNINGS: Add purchase boost for TON purchases
+  if (PM && PM.amountTon && PM.amountTon > 0){
+    addPurchaseBoost(PM.amountTon);
+    const pct = earningsCfg().purchaseBoostPercent || 0;
+    const days = earningsCfg().purchaseBoostDays || 30;
+    setTimeout(() => {
+      toast('+' + pct + '% mining boost active for ' + days + ' days! TON refunded after expiry.', 'gold', 'zap');
+    }, 800);
+  }
+  save(); updChips(true);
+}
+
+/* ================================ 19. CONTROL CHANNEL (panel bridge) ================================ */
+let BC = null;
+try{ if ('BroadcastChannel' in window) BC = new BroadcastChannel('cp_channel'); }catch(e){}
+if (BC) BC.onmessage = () => handleCpPush('config');
+window.addEventListener('storage', e => {
+  if (e.key === 'cp_config') handleCpPush('config');
+  else if (e.key === 'cp_inbox') handleCpPush('inbox');
+  else if (e.key === 'cp_state') handleCpPush('state');
+});
+window.addEventListener('cp-push', () => handleCpPush('*'));
+function handleCpPush(what){
+  try{
+    if (what === 'config' || what === '*'){
+      const prevFields = CFG ? CFG.mining.fields : null;
+      loadConfig();
+      applyPrefs(); renderTopbar(); renderNav();
+      if (!CFG.maps.find(m => m.id === ST.mapId)) ST.mapId = CFG.maps[0].id;
+      rebuildFields(); ensureState();
+      closeAllTop(); go(VIEW, true);
+      toast('Configuration updated by control panel', 'info', 'refresh');
+    }
+    if (what === 'inbox' || what === '*'){ consumeInbox(); }
+    if (what === 'state'){
+      const saved = LS.get('cp_state', null);
+      if (saved){ ST = deepMerge(newState(), saved); ensureState(); closeAllTop(); go(VIEW, true); updChips(true); }
+    }
+  }catch(e){}
+}
+function consumeInbox(){
+  const q = LS.get('cp_inbox', null);
+  if (!q || !q.length) return;
+  LS.set('cp_inbox', []);
+  (Array.isArray(q) ? q : [q]).forEach(cmd => {
+    try{
+      if (cmd.cmd === 'grant'){
+        if (cmd.ore) ST.ore += Number(cmd.ore)||0;
+        if (cmd.gems) ST.gems += Number(cmd.gems)||0;
+        if (cmd.xp) ST.xp += Number(cmd.xp)||0;
+        save(); updChips(true); confettiAt(140, 140, 60);
+        toast('Control panel granted: +' + fmt(cmd.ore||0) + ' ' + CFG.currency.ore.name + (cmd.gems ? ' +' + cmd.gems + ' ' + CFG.currency.gem.name : ''), 'gold', 'gift');
+      } else if (cmd.cmd === 'notify'){
+        toast(esc(cmd.title || 'Notice') + (cmd.msg ? ' - ' + esc(cmd.msg) : ''), 'info', 'info');
+      } else if (cmd.cmd === 'reset'){
+        LS.del('cp_state'); location.reload();
+      }
+    }catch(e){}
+  });
+}
+window.MiniAppAPI = {
+  getConfig: () => CFG,
+  setConfig: partial => { persistConfigOverride(partial || {}); handleCpPush('config'); },
+  getState: () => ST,
+  grant: g => { LS.set('cp_inbox', [{ cmd:'grant', ore:g&&g.ore, gems:g&&g.gems, xp:g&&g.xp }]); consumeInbox(); },
+  notify: (title, msg) => { LS.set('cp_inbox', [{ cmd:'notify', title, msg }]); consumeInbox(); },
+  addTask: t => { const arr = LS.get('cp_config', {}) || {}; arr.tasks = (arr.tasks || CFG.tasks).concat([t]); persistConfigOverride({ tasks: arr.tasks }); handleCpPush('config'); },
+  removeTask: id => { const tasks = CFG.tasks.filter(t => t.id !== id); persistConfigOverride({ tasks }); handleCpPush('config'); },
+  resetApp: () => { LS.del('cp_state'); try{ if (window.FB){ const uid = fbUserId(); window.FB.set(window.FB.ref(window.FB.db, 'users/' + uid + '/state'), null); } }catch(e){} location.reload(); },
+  openScreen: name => { closeAllTop(); go(name); },
+  openPage: name => { closeAllTop(); openPage(name); },
+  getManifestUrl: () => tcManifestUrl(),
+  syncFromFirebase: () => syncFromFirebase(),
+  saveToFirebase: () => saveToFirebase(),
+  firebaseReady: () => FB_READY,
+  getEarnings: () => ST.earnings || {},
+  getActiveBoosts: () => getActivePurchaseBoosts(),
+  getRefundBalance: () => (ST.earnings && ST.earnings.refundBalance) || 0,
+  getPurchaseBoostPct: () => getPurchaseBoostPct(),
+  claimDailyGram: () => claimDailyGram(),
+  checkExpiredBoosts: () => checkExpiredBoosts(),
+  /* Control panel miner management */
+  getMiners: () => CFG.miners,
+  getMiner: id => CFG.miners.find(m => m.id === id),
+  editMiner: (id, updates) => {
+    const m = CFG.miners.find(x => x.id === id);
+    if (!m) return false;
+    Object.assign(m, updates);
+    renderNav(); if (VIEW === 'store') go('store', true);
+    return true;
+  },
+  setMinerDiscount: (id, percent) => {
+    const m = CFG.miners.find(x => x.id === id);
+    if (!m) return false;
+    m.discount = percent || 0;
+    if (VIEW === 'store') go('store', true);
+    return true;
+  },
+  enableMiner: (id, enabled) => {
+    const m = CFG.miners.find(x => x.id === id);
+    if (!m) return false;
+    m.enabled = enabled !== false;
+    if (VIEW === 'store') go('store', true);
+    return true;
+  },
+  disableMiner: id => {
+    const m = CFG.miners.find(x => x.id === id);
+    if (!m) return false;
+    m.enabled = false;
+    if (VIEW === 'store') go('store', true);
+    return true;
+  },
+  changeMinerId: (oldId, newId) => {
+    const m = CFG.miners.find(x => x.id === oldId);
+    if (!m || !newId) return false;
+    if (CFG.miners.find(x => x.id === newId)) return false; // ID already exists
+    m.id = newId;
+    // Update owned instances
+    for (const k in ST.miners){
+      if (ST.miners[k].id === oldId) ST.miners[k].id = newId;
+    }
+    save(); if (VIEW === 'store') go('store', true);
+    return true;
+  },
+  grantMiner: minerId => {
+    const m = CFG.miners.find(x => x.id === minerId);
+    if (!m) return false;
+    addMiner(m);
+    if (m.free) ST.earnings.freeMinerActivated = true;
+    save(); updChips(true);
+    return true;
+  },
+  activateMinerForUser: minerId => {
+    // Same as grantMiner - activates a miner for the current user by ID
+    const m = CFG.miners.find(x => x.id === minerId);
+    if (!m) return false;
+    addMiner(m);
+    if (m.free) ST.earnings.freeMinerActivated = true;
+    save(); updChips(true);
+    if (VIEW === 'mine') go('mine', true);
+    return true;
+  },
+  disableUserMiner: uid => {
+    // uid is the instance key (u1, u2, etc.) in ST.miners
+    if (!ST.miners[uid]) return false;
+    // Unassign from field first
+    const fIdx = ST.miners[uid].field;
+    if (fIdx !== null && fIdx !== undefined && ST.fields[fIdx]) ST.fields[fIdx].miner = null;
+    delete ST.miners[uid];
+    save(); if (VIEW === 'mine') go('mine', true);
+    return true;
+  },
+  getUserMiners: () => {
+    return Object.entries(ST.miners).map(([uid, m]) => ({
+      uid, id: m.id, level: m.level, field: m.field,
+      def: CFG.miners.find(d => d.id === m.id) || null
+    }));
+  },
+  version: () => '2.0.0'
+};
+
+/* ================================ 20. OFFLINE EARNINGS ================================ */
+function offlineEarn(){
+  const now = Date.now();
+  const capH = (CFG.mining.offlineHoursCap||8) + gearVal('offlineHours');
+  const dt = Math.min((now - (ST.lastSeen||now))/1000, capH*3600);
+  if (dt < 90) return null;
+  const rate = totalRate();
+  if (rate <= 0) return null;
+  const eff = CFG.mining.offlineEfficiency != null ? CFG.mining.offlineEfficiency : .6;
+  const md = MAP();
+  let ore = rate * dt * eff;
+  const activeFields = ST.fields.filter(f => f.miner).length;
+  const veins = Math.min(Math.floor(dt * rate / Math.max(1, CFG.mining.veinHPBase * md.hpMult)), activeFields);
+  ore += veins * CFG.mining.veinValueBase * md.mult * .9 * eff;
+  return { secs: dt, ore: Math.floor(ore), rate };
+}
+
+/* ================================ 21. BOOT ================================== */
+function bindDelegation(){
+  document.addEventListener('click', e => {
+    const a = e.target.closest('[data-act]');
+    if (!a) return;
+    const fn = ACT[a.dataset.act];
+    if (fn){ hap('light'); fn(a.dataset, a, e); }
+  });
+}
+function boot(){
+  loadConfig();
+  loadState();
+  ensureDay();
+  applyPrefs();
+  fxInit();
+  bgParticles();
+  initTG();
+  renderTopbar();
+  renderNav();
+  updChips(true);
+  go('mine');
+  bindDelegation();
+  setInterval(tick, clamp(CFG.mining.tickMs||1000, 200, 5000));
+  requestAnimationFrame(raf);
+  setInterval(() => { ST.lastSeen = Date.now(); save(); }, 10000);
+  consumeInbox();
+  // EARNINGS: check for expired boosts on boot
+  setTimeout(() => { checkExpiredBoosts(); }, 2000);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) saveNow(); });
+  window.addEventListener('pagehide', () => { try{ saveNow(); }catch(e){} });
+  setTimeout(() => { $('#splash').classList.add('gone'); }, CFG.ui.splashMinMs || 1100);
+  setTimeout(() => {
+    const off = offlineEarn();
+    if (off){ window.__OFFLINE__ = off; sheetOffline(off); }
+    else if (ST.friends.referredBy) toast('Joined with invite code ' + esc(ST.friends.referredBy), 'info', 'friends');
+  }, (CFG.ui.splashMinMs || 1100) + 450);
+}
+boot();
+</script>
+</body>
+</html>
