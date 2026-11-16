@@ -670,7 +670,8 @@ const DEFAULT_CONFIG = {
     name: 'DEEPSHAFT',
     tagline: 'Idle Mining Empire',
     logoUrl: '', // optional external logo image URL
-    botUsername: 'deepshaft_bot', // used for referral links (control panel)
+    botUsername: 'deepshaftOG_bot', // used for referral links
+    webAppUrl: 'https://t.me/deepshaftOG_bot/mine', // web app referral link
     supportUrl: 'https://t.me/deepshaft_support'
   },
   ui: {
@@ -745,8 +746,10 @@ const DEFAULT_CONFIG = {
   tasksCfg: { verifySec: 10 },
   daily: { baseOre: 600, baseGem: 2, streakStep: 0.25, streakCapMult: 3 },
   friends: {
-    enabled: true, bonusOre: 2000, bonusGem: 3, commissionPercent: 5,
-    desc: 'Invite miners and earn a share of everything your crew digs up.'
+    enabled: true, bonusOre: 200, bonusGem: 0, commissionPercent: 5,
+    referralTonReward: 0.01, // Each referral = 0.01 TON worth of ore
+    antiMultiAccount: true, // Block multi-account referral rewards
+    desc: 'Invite miners and earn 0.01 TON equivalent per referral + 5% commission.'
   },
   gemPacks: [
     { id:'gp1', gems:20, priceTon:0.2, label:'Starter Pouch', bonusPercent:0, enabled:true },
@@ -865,7 +868,7 @@ function newState(){
     stats: { mined:0, veins:0, tasks:0, buys:0, days:1 },
     tasks: {}, // id -> { start, done, last }
     daily: { last: 0, streak: 0 },
-    friends: { code: uid().slice(-6).toUpperCase(), referredBy: '', invited: 0, earnedOre: 0 },
+    friends: { code: uid().slice(-6).toUpperCase(), referredBy: '', invited: 0, earnedOre: 0, blockedReferrals: false, deviceId: '' },
     ach: {},
     pay: [], wd: [],
     prefs: {},
@@ -893,7 +896,7 @@ function ensureState(){
   ST.stats = Object.assign({ mined:0, veins:0, tasks:0, buys:0, days:1 }, ST.stats||{});
   ST.tasks = ST.tasks || {}; ST.ach = ST.ach || {};
   ST.pay = ST.pay || []; ST.wd = ST.wd || [];
-  ST.friends = Object.assign({ code: uid().slice(-6).toUpperCase(), referredBy:'', invited:0, earnedOre:0 }, ST.friends||{});
+  ST.friends = Object.assign({ code: uid().slice(-6).toUpperCase(), referredBy:'', invited:0, earnedOre:0, blockedReferrals:false, deviceId:'' }, ST.friends||{});
   ST.gearOwned = ST.gearOwned || []; ST.gearEquipped = ST.gearEquipped || {};
   ST.earnings = Object.assign({ lastDailyGram:0, activeBoosts:[], refundBalance:0, totalPurchased:0, freeMinerActivated:false }, ST.earnings||{});
   if (!ST.earnings.activeBoosts) ST.earnings.activeBoosts = [];
@@ -1014,6 +1017,185 @@ function initFirebase(){
   FB_READY = true;
   syncFromFirebase();
   listenFirebase();
+  // Anti-multi-account & referral processing on load
+  setTimeout(() => {
+    checkMultiAccount();
+    processReferral();
+    registerReferralCode();
+    listenReferrals();
+  }, 500);
+}
+window.addEventListener('firebase-ready', () => { setTimeout(initFirebase, 300); });
+
+/* ================================ 4c. ANTI-MULTI-ACCOUNT & REFERRAL SYSTEM ================================
+   - Generates a device fingerprint stored in localStorage + Firebase
+   - If same device is used by multiple Telegram accounts, marks as multi-account
+   - Multi-account users: referrals count but cannot claim rewards (blockedReferrals = true)
+   - Referrals processed on loading screen: checks start_param for ref_ code
+   - Referral reward = 0.01 TON equivalent of ore (200 ore)
+   ============================================================================================================ */
+
+/* Generate persistent device ID from browser/Telegram data */
+function getDeviceId(){
+  if (ST.friends.deviceId) return ST.friends.deviceId;
+  // Try to get from localStorage first
+  let did = LS.get('cp_device_id', null);
+  if (!did){
+    // Build fingerprint from available data
+    const ua = navigator.userAgent || '';
+    const plat = navigator.platform || '';
+    const lang = navigator.language || '';
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    const sc = (screen.width || 0) + 'x' + (screen.height || 0) + 'x' + (screen.colorDepth || 0);
+    const tgPlatform = (TG && TG.initDataUnsafe && TG.initDataUnsafe.platform) ? TG.initDataUnsafe.platform : '';
+    const tgVer = (TG && TG.version) ? TG.version : '';
+    did = 'dev_' + uid() + '_' + (tgPlatform || plat.slice(0,3) || 'web');
+    // Store in localStorage and state
+    LS.set('cp_device_id', did);
+    ST.friends.deviceId = did;
+  } else {
+    ST.friends.deviceId = did;
+  }
+  return did;
+}
+
+/* Check if this device is already used by another Telegram account (multi-account detection) */
+async function checkMultiAccount(){
+  if (!window.FB || !FB_READY) return;
+  const F = CFG.friends || {};
+  if (F.antiMultiAccount === false) return;
+  if (!USER || !USER.id) return;
+  const deviceId = getDeviceId();
+  const userId = 'tg_' + USER.id;
+  try{
+    // Check if this device ID is registered to a different user
+    const snap = await window.FB.get(window.FB.ref(window.FB.db, 'devices/' + deviceId));
+    if (snap.exists()){
+      const deviceData = snap.val();
+      if (deviceData.userId && deviceData.userId !== userId){
+        // This device is already used by another account -> multi-account detected
+        ST.friends.blockedReferrals = true;
+        // Log the multi-account detection
+        window.FB.set(window.FB.ref(window.FB.db, 'users/' + userId + '/multiAccount'), {
+          deviceUsedBy: deviceData.userId, detectedAt: Date.now(), deviceId: deviceId
+        });
+        save();
+        setTimeout(() => {
+          toast('Multi-account detected. Referral rewards blocked. One account per device only.', 'err', 'alert');
+        }, 3000);
+        return;
+      }
+    }
+    // Register this device to the current user
+    window.FB.set(window.FB.ref(window.FB.db, 'devices/' + deviceId), {
+      userId: userId, firstSeen: deviceData && deviceData.firstSeen || Date.now(), lastSeen: Date.now()
+    });
+    // Also store device in user profile
+    window.FB.set(window.FB.ref(window.FB.db, 'users/' + userId + '/deviceId'), deviceId);
+    ST.friends.blockedReferrals = false;
+  }catch(e){}
+}
+
+/* Process referral on first login - called during loading screen */
+async function processReferral(){
+  if (!USER || !USER.id) return;
+  if (ST.friends.referredBy) return; // Already processed
+  // Get start_param from Telegram
+  let refCode = '';
+  try{
+    if (TG && TG.initDataUnsafe && TG.initDataUnsafe.start_param){
+      const sp = String(TG.initDataUnsafe.start_param);
+      if (sp.indexOf('ref_') === 0) refCode = sp.slice(4);
+    }
+  }catch(e){}
+  if (!refCode) return;
+  ST.friends.referredBy = refCode;
+  save();
+  // Register referral in Firebase
+  if (window.FB && FB_READY){
+    const userId = 'tg_' + USER.id;
+    try{
+      // Find referrer by referral code
+      const usersSnap = await window.FB.get(window.FB.ref(window.FB.db, 'referralCodes/' + refCode));
+      if (usersSnap.exists()){
+        const referrerId = usersSnap.val();
+        if (referrerId && referrerId !== userId){
+          // Record the referral
+          const refKey = 'referrals/' + referrerId + '/' + userId;
+          window.FB.set(window.FB.ref(window.FB.db, refKey), {
+            userId: userId, userName: USER.name || '', ts: Date.now(),
+            rewarded: !ST.friends.blockedReferrals, blocked: ST.friends.blockedReferrals
+          });
+          // Increment referrer's invited count
+          const refUserRef = window.FB.ref(window.FB.db, 'users/' + referrerId + '/referrals/' + userId);
+          window.FB.set(refUserRef, {
+            ts: Date.now(), blocked: ST.friends.blockedReferrals, rewarded: !ST.friends.blockedReferrals
+          });
+        }
+      }
+    }catch(e){}
+  }
+  // Show welcome toast
+  if (!ST.friends.blockedReferrals){
+    setTimeout(() => {
+      toast('Welcome! You joined with a referral. Your referrer earns 0.01 TON.', 'info', 'friends');
+    }, 2000);
+  }
+}
+
+/* Claim referral reward (referrer claims when they have invited users) */
+function claimReferralReward(){
+  if (ST.friends.blockedReferrals){
+    toast('Referral rewards blocked: multi-account detected', 'err', 'alert');
+    return;
+  }
+  if ((ST.friends.invited || 0) <= 0){
+    toast('No referrals to claim yet', 'info');
+    return;
+  }
+  const F = CFG.friends || {};
+  const rewardOre = F.referralTonReward ? F.referralTonReward * (CFG.economy.orePerTon || 20000) : (F.bonusOre || 200);
+  const claimable = ST.friends.invited || 0;
+  const totalReward = rewardOre * claimable;
+  ST.ore += totalReward;
+  ST.stats.mined += totalReward;
+  ST.friends.earnedOre = (ST.friends.earnedOre || 0) + totalReward;
+  ST.friends.invited = 0; // Reset claimable count
+  sfx('coin'); hapOk(); confettiAt(140, 140, 60);
+  toast('Referral reward claimed: +' + fmt(totalReward) + ' ORE (' + fmtTon(F.referralTonReward * claimable) + ' TON)', 'gold', 'gift');
+  save(); updChips(true);
+}
+
+/* Register own referral code in Firebase so others can find referrer */
+function registerReferralCode(){
+  if (!window.FB || !FB_READY || !USER || !USER.id) return;
+  const userId = 'tg_' + USER.id;
+  try{
+    window.FB.set(window.FB.ref(window.FB.db, 'referralCodes/' + ST.friends.code), userId);
+  }catch(e){}
+}
+
+/* Listen for new referrals in real-time */
+function listenReferrals(){
+  if (!window.FB || !FB_READY || !USER || !USER.id) return;
+  const userId = 'tg_' + USER.id;
+  try{
+    window.FB.onValue(window.FB.ref(window.FB.db, 'referrals/' + userId), (snap) => {
+      if (snap.exists()){
+        const refs = snap.val();
+        const refCount = Object.keys(refs).length;
+        const oldCount = ST.friends.invited || 0;
+        // Count new unblocked referrals
+        const newRefs = Object.values(refs).filter(r => !r.blocked).length;
+        if (newRefs > oldCount){
+          ST.friends.invited = newRefs;
+          save();
+          if (VIEW === 'friends') go('friends', true);
+          toast('New referral joined! +' + CFG.friends.referralTonReward + ' TON ready to claim', 'gold', 'friends');
+        }
+      }
+    });
+  }catch(e){}
 }
 window.addEventListener('firebase-ready', () => { setTimeout(initFirebase, 300); });
 
@@ -1764,19 +1946,22 @@ function rTasks(){
 }
 
 /* ================================ 10. SCREEN: FRIENDS ================================== */
-function refLink(){ return 'https://t.me/' + (CFG.app.botUsername || 'your_bot') + '?start=ref_' + ST.friends.code; }
+function refLink(){ return (CFG.app.webAppUrl || ('https://t.me/' + (CFG.app.botUsername || 'your_bot') + '/mine')) + '?startapp=ref_' + ST.friends.code; }
 function rFriends(){
   const F = CFG.friends, G = CFG.currency.gem.name, O = CFG.currency.ore.name;
   if (F.enabled === false) return '<div class="card center" style="text-align:center;margin-top:30%"><div class="td mut">Friends module is disabled.</div></div>';
   const link = refLink();
+  const invited = ST.friends.invited || 0;
+  const blocked = ST.friends.blockedReferrals;
+  const refRewardTon = F.referralTonReward || 0.01;
+  const refRewardOre = refRewardTon * (CFG.economy.orePerTon || 20000);
   return '<div class="fhero">'
     + '<div class="fico">' + I('friends') + '</div>'
     + '<div class="ft">Build your crew</div>'
-    + '<div class="fd">' + esc(F.desc || 'Invite miners and earn a share of everything your crew digs up.') + '</div>'
+    + '<div class="fd">' + esc(F.desc || 'Invite miners and earn rewards.') + '</div>'
     + '<div class="trew" style="justify-content:center;margin-top:12px">'
-      + '<span class="rchip">' + I('ore') + '+' + fmt(F.bonusOre) + ' ' + O + '</span>'
-      + (F.bonusGem ? '<span class="rchip gemc">' + I('gem') + '+' + F.bonusGem + ' ' + G + '</span>' : '')
-      + '<span class="rchip tonc">' + I('zap') + F.commissionPercent + '% of their output</span>'
+      + '<span class="rchip tonc">' + I('ton') + fmtTon(refRewardTon) + ' TON per referral</span>'
+      + '<span class="rchip tonc">' + I('zap') + F.commissionPercent + '% commission forever</span>'
     + '</div>'
     + '<div class="refbox">'
       + '<button class="btn sm grow" data-act="share-ref">' + I('share') + 'Share invite</button>'
@@ -1784,16 +1969,22 @@ function rFriends(){
     + '</div>'
     + '<div class="codebox mt10">Your code: <b style="color:var(--accent)">' + esc(ST.friends.code) + '</b></div>'
   + '</div>'
+  + (blocked
+    ? '<div class="card mt10 row" style="border-color:rgba(248,113,113,.4);background:rgba(248,113,113,.06)">' + I('alert') + '<div class="grow"><div class="tt sm" style="color:var(--bad)">Multi-account detected</div><div class="td mut xs">Referral rewards are blocked. Only one account per device is allowed. Referrals still count but cannot be claimed.</div></div></div>'
+    : '')
   + '<div class="row mt10">'
-    + '<div class="card fstat"><b class="num" style="color:var(--accent2)">' + (ST.friends.invited||0) + '</b><span>Invited</span></div>'
+    + '<div class="card fstat"><b class="num" style="color:var(--accent2)">' + invited + '</b><span>Invited</span></div>'
     + '<div class="card fstat"><b class="num" style="color:var(--accent)">' + fmt(ST.friends.earnedOre||0) + '</b><span>' + O + ' earned</span></div>'
     + '<div class="card fstat"><b class="num" style="color:var(--good)">' + F.commissionPercent + '%</b><span>Commission</span></div>'
   + '</div>'
+  + (invited > 0 && !blocked
+    ? '<button class="btn block pulse mt10" data-act="claim-referral">' + I('gift') + 'Claim ' + fmt(refRewardOre * invited) + ' ' + O + ' (' + fmtTon(refRewardTon * invited) + ' TON)</button>'
+    : '')
   + (ST.friends.referredBy
-    ? '<div class="card mt10 row">' + I('shield','ic-ton') + '<div class="grow"><div class="tt sm">Joined with invite code <b style="color:var(--accent2)">' + esc(ST.friends.referredBy) + '</b></div><div class="td mut">Your welcome bonus will be credited automatically.</div></div></div>'
+    ? '<div class="card mt10 row">' + I('shield','ic-ton') + '<div class="grow"><div class="tt sm">Joined with invite code <b style="color:var(--accent2)">' + esc(ST.friends.referredBy) + '</b></div><div class="td mut">Your referrer received the referral reward.</div></div></div>'
     : '')
   + '<div class="card mt10"><div class="tt sm">How it works</div>'
-    + '<div class="note mt6">1. Share your personal link with friends.<br>2. They open the app through your link.<br>3. You receive a welcome bonus for each miner who joins, plus ' + F.commissionPercent + '% of everything their crew mines - forever.</div>'
+    + '<div class="note mt6">1. Share your personal link with friends.<br>2. They open the app through your link.<br>3. You receive ' + fmtTon(refRewardTon) + ' TON per referral + ' + F.commissionPercent + '% of their mining forever.<br>4. One account per device - multi-accounts are blocked from claiming rewards.</div>'
   + '</div>';
 }
 
@@ -2001,7 +2192,11 @@ PAGES.wallet = function(){
         + '<button class="btn sm tonb" data-act="wc-connect">Connect</button></div>')
   + '</div>'
 
-  + (swapOn ? swapSectionHTML(O, G) : '')
+  + (swapOn
+    ? '<div class="stitle">Instant swap</div>'
+    + '<div class="card row" data-act="open-page" data-p="swap"><div class="mico cy">' + I('refresh') + '</div>'
+    + '<div class="grow"><b>Swap ORE <-> GEM</b><span>Instant exchange at best rates</span></div>' + I('chevR','chev') + '</div>'
+    : '')
 
   + (W.enabled !== false
   ? '<div class="stitle">Withdraw ' + O + '</div>'
@@ -2118,7 +2313,11 @@ function doSwap(el){
   sfx('buy'); hapOk(); confettiEl(el, 40);
   save(); updChips(true);
   SWAP_KEEP.amt = '';
-  refreshWallet(); checkAch();
+  // Refresh swap page if open, otherwise wallet
+  const swapPg = NAVSTACK.find(n => n.id === 'swap');
+  if (swapPg){ swapPg.el.innerHTML = PAGES.swap(); bindSwapCalc(swapPg.el); }
+  else refreshWallet();
+  checkAch();
 }
 function swapHistory(item, note){
   const rec = { id: uid(), ts: Date.now(), userId: USER?USER.id:0, userName: USER?USER.name:'Guest',
@@ -2238,6 +2437,63 @@ PAGES.profile = function(){
   + '<div class="card"><div class="row between"><div><div class="tt sm">Invite code</div><div class="codebox mt10" style="display:inline-block">' + esc(ST.friends.code) + '</div></div>'
     + '<button class="btn sm" data-act="share-ref">' + I('share') + 'Invite</button></div></div>';
 };
+
+/* Professional swap page */
+PAGES.swap = function(){
+  const O = CFG.currency.ore.name, G = CFG.currency.gem.name;
+  const SW = CFG.swap || {};
+  const o2g = SWAP_DIR === 'o2g';
+  const r = swapRates();
+  const minTxt = o2g ? (SW.minOre||1) : (SW.minGem||1);
+  const rate = CFG.economy.orePerTon || 20000;
+  return ''
+  + '<div class="page-h">'
+    + '<button class="backb" data-act="close-top">' + I('chevL') + '</button>'
+    + '<span class="pt">Swap</span>'
+  + '</div>'
+  + '<div class="page-c">'
+    + '<div class="card" style="text-align:center;padding:20px">'
+      + '<div style="width:56px;height:56px;margin:0 auto 12px;color:var(--accent2)">' + I('refresh') + '</div>'
+      + '<div class="tt" style="font-size:16px">Instant Swap</div>'
+      + '<div class="td mut xs mt6">Exchange ' + O + ' and ' + G + ' instantly at fixed rates</div>'
+    + '</div>'
+    + '<div class="card mt10">'
+      + '<div class="swap-dir">'
+        + '<button class="sdir' + (o2g ? ' on' : '') + '" data-act="swap-dir" data-d="o2g">' + I('ore') + '<span>' + esc(O) + ' -> ' + esc(G) + '</span></button>'
+        + '<button class="sdir' + (!o2g ? ' on' : '') + '" data-act="swap-dir" data-d="g2o">' + I('gem') + '<span>' + esc(G) + ' -> ' + esc(O) + '</span></button>'
+      + '</div>'
+      + (r.rate <= 0
+        ? '<div class="note mt10">Swap is temporarily unavailable - the rate is not configured.</div>'
+        : ''
+        + '<label class="lb">You swap (' + (o2g ? esc(O) : esc(G)) + ') - min ' + fmt(minTxt) + '</label>'
+        + '<div class="row"><input class="inp num" id="swapIn" type="number" inputmode="decimal" placeholder="0" value="' + esc(SWAP_KEEP.amt || '') + '">'
+        + '<button class="btn sm ghost" data-act="swap-max">MAX</button></div>'
+        + '<div class="row between mt10" style="padding:8px 0;border-bottom:1px dashed rgba(255,255,255,.08)">'
+          + '<span class="mut xs">Available balance</span>'
+          + '<b class="num xs" style="color:' + (o2g ? 'var(--accent)' : 'var(--gem)') + '">' + fmt(o2g ? ST.ore : ST.gems) + ' ' + (o2g ? O : G) + '</b>'
+        + '</div>'
+        + '<div class="row between mt10" style="padding:8px 0;border-bottom:1px dashed rgba(255,255,255,.08)">'
+          + '<span class="mut xs">Exchange rate</span>'
+          + '<b class="num xs" id="swapRateTxt">1 ' + esc(G) + ' = ' + fmt(r.rate) + ' ' + esc(O) + '</b>'
+        + '</div>'
+        + '<div class="row between" style="padding:8px 0;border-bottom:1px dashed rgba(255,255,255,.08)">'
+          + '<span class="mut xs">Fee (' + r.fee + '%)</span>'
+          + '<b class="num xs" id="swapFeeTxt">0</b>'
+        + '</div>'
+        + '<div class="row between" style="padding:8px 0">'
+          + '<span class="mut xs">You receive</span>'
+          + '<b class="num" style="color:var(--good);font-size:16px" id="swapOutTxt">0 ' + (o2g ? esc(G) : esc(O)) + '</b>'
+        + '</div>'
+        + '<button class="btn block mt10" data-act="swap-do">' + I('refresh') + 'Swap now</button>'
+        + '<div class="note mt10" style="text-align:center">Swaps are instant and update your in-app balance.<br>Rates: 5000 ' + O + ' = 1 ' + G + ' | 1 ' + G + ' = 4200 ' + O + '<br>~' + fmtTon(1) + ' TON = ' + fmt(rate) + ' ' + O + '</div>')
+    + '</div>'
+    + '<div class="card mt10 row" data-act="open-page" data-p="wallet">'
+      + '<div class="mico">' + I('wallet') + '</div>'
+      + '<div class="grow"><b>Back to wallet</b><span>View balance, withdraw, deposit</span></div>'
+      + I('chevR','chev') + '</div>'
+  + '</div>';
+};
+PAGES_ON.swap = function(el){ bindSwapCalc(el); };
 
 PAGES.about = function(){
   return ''
@@ -2622,7 +2878,7 @@ const ACT = {
     toast('Wallet disconnected', 'info'); closeAllTop(); openPage('wallet');
   },
   /* swap */
-  'swap-dir': d => { if (SWAP_DIR !== d.d){ SWAP_DIR = d.d; SWAP_KEEP.amt = ''; refreshWallet(); sfx('tap'); } },
+  'swap-dir': d => { if (SWAP_DIR !== d.d){ SWAP_DIR = d.d; SWAP_KEEP.amt = ''; const pg = NAVSTACK.find(n => n.id === 'swap'); if (pg){ pg.el.innerHTML = PAGES.swap(); bindSwapCalc(pg.el); } else refreshWallet(); sfx('tap'); } },
   'swap-max': () => {
     const a = $('#swapIn'); if (!a) return;
     const r = swapRates();
@@ -2686,9 +2942,14 @@ const ACT = {
   /* friends */
   'share-ref': () => {
     const link = refLink();
-    const text = 'Join me in ' + CFG.app.name + ' - build a mining crew and earn ' + CFG.currency.ore.name + '.';
+    const text = 'Join me in ' + CFG.app.name + ' - mine crypto and earn TON! Use my invite link:';
     try{ if (TG){ TG.openTelegramLink('https://t.me/share/url?url=' + encodeURIComponent(link) + '&text=' + encodeURIComponent(text)); return; } }catch(e){}
     copyText(link, 'Invite link copied');
+  },
+  /* EARNINGS: claim referral reward */
+  'claim-referral': (d, el) => {
+    claimReferralReward();
+    if (VIEW === 'friends') go('friends', true);
   }
 };
 function buyItem(kind, id, el){
@@ -3109,6 +3370,14 @@ window.MiniAppAPI = {
   getPurchaseBoostPct: () => getPurchaseBoostPct(),
   claimDailyGram: () => claimDailyGram(),
   checkExpiredBoosts: () => checkExpiredBoosts(),
+  /* Referral & anti-multi-account */
+  getDeviceId: () => getDeviceId(),
+  checkMultiAccount: () => checkMultiAccount(),
+  processReferral: () => processReferral(),
+  claimReferralReward: () => claimReferralReward(),
+  registerReferralCode: () => registerReferralCode(),
+  getReferralStats: () => ({ invited: ST.friends.invited, earnedOre: ST.friends.earnedOre, blocked: ST.friends.blockedReferrals, code: ST.friends.code, referredBy: ST.friends.referredBy }),
+  blockUserReferrals: (userId) => { ST.friends.blockedReferrals = true; save(); },
   /* Control panel miner management */
   getMiners: () => CFG.miners,
   getMiner: id => CFG.miners.find(m => m.id === id),
