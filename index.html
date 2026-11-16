@@ -869,7 +869,7 @@ function newState(){
     stats: { mined:0, veins:0, tasks:0, buys:0, days:1 },
     tasks: {}, // id -> { start, done, last }
     daily: { last: 0, streak: 0 },
-    friends: { code: uid().slice(-6).toUpperCase(), referredBy: '', referredByTgId: 0, invited: 0, totalInvited: 0, earnedOre: 0, blockedReferrals: false, deviceId: '' },
+    friends: { code: '', referredBy: '', referredByTgId: 0, invited: 0, totalInvited: 0, earnedOre: 0, blockedReferrals: false, deviceId: '', referrerName: '', referrerUsername: '', referrerAvatar: '' },
     ach: {},
     pay: [], wd: [],
     prefs: {},
@@ -897,7 +897,9 @@ function ensureState(){
   ST.stats = Object.assign({ mined:0, veins:0, tasks:0, buys:0, days:1 }, ST.stats||{});
   ST.tasks = ST.tasks || {}; ST.ach = ST.ach || {};
   ST.pay = ST.pay || []; ST.wd = ST.wd || [];
-  ST.friends = Object.assign({ code: uid().slice(-6).toUpperCase(), referredBy:'', referredByTgId:0, invited:0, totalInvited:0, earnedOre:0, blockedReferrals:false, deviceId:'' }, ST.friends||{});
+  ST.friends = Object.assign({ code: '', referredBy:'', referredByTgId:0, invited:0, totalInvited:0, earnedOre:0, blockedReferrals:false, deviceId:'', referrerName:'', referrerUsername:'', referrerAvatar:'' }, ST.friends||{});
+  // Set referral code to Telegram user ID if user is available
+  if (USER && USER.id && !ST.friends.code) { ST.friends.code = String(USER.id); }
   ST.gearOwned = ST.gearOwned || []; ST.gearEquipped = ST.gearEquipped || {};
   ST.earnings = Object.assign({ lastDailyGram:0, activeBoosts:[], refundBalance:0, totalPurchased:0, freeMinerActivated:false }, ST.earnings||{});
   if (!ST.earnings.activeBoosts) ST.earnings.activeBoosts = [];
@@ -1029,256 +1031,258 @@ function initFirebase(){
 window.addEventListener('firebase-ready', () => { setTimeout(initFirebase, 300); });
 
 /* ================================ 4c. ANTI-MULTI-ACCOUNT & REFERRAL SYSTEM ================================
-   - Generates a persistent device fingerprint stored in localStorage + Firebase
-   - Checks BOTH directions: device->user AND user->device for multi-account detection
-   - Also checks if user is manually banned from control panel (Firebase users/{id}/banned)
-   - Multi-account users: referrals count but cannot claim rewards (blockedReferrals = true)
-   - Referral processing tracks Telegram user IDs of both referrer and referred user
-   - Block page shows support button: https://t.me/deepshaftOG_Support
+   RULE: One account per device. Multi-account on same device = blocked referrals.
+   - Device ID is persistent in localStorage (same across Telegram account switches on same device)
+   - Referral code = Telegram user ID (link: ?startapp=ref_{userId})
+   - Multi-account detection: checks if device is already linked to another Telegram account
+   - Multi-account users: referrals COUNT but CANNOT CLAIM rewards
+   - Referrer info (name, username, avatar, balance) shown during loading screen
    ============================================================================================================ */
 
-/* Generate persistent device ID - stable across sessions */
+/* Get device ID - ALWAYS from localStorage (persistent across Telegram account switches) */
 function getDeviceId(){
-  if (ST.friends.deviceId) return ST.friends.deviceId;
+  // Always read from localStorage first - this is shared across Telegram accounts on same device
   let did = LS.get('cp_device_id', null);
   if (!did){
-    // Build stable fingerprint from Telegram platform + browser data
-    const tgPlat = (TG && TG.initDataUnsafe && TG.initDataUnsafe.platform) ? TG.initDataUnsafe.platform : '';
-    const ua = navigator.userAgent || '';
+    const tgPlat = (TG && TG.initDataUnsafe && TG.initDataUnsafe.platform) ? TG.initDataUnsafe.platform : 'web';
+    const ua = (navigator.userAgent || '').slice(0, 40);
     const sc = (screen.width || 0) + 'x' + (screen.height || 0);
-    // Create a hash-like ID from stable data + random component for uniqueness
-    const seed = (tgPlat + '|' + ua.slice(0,60) + '|' + sc).replace(/[^a-zA-Z0-9]/g, '');
-    did = 'dev_' + (seed.slice(0,12) || 'web') + '_' + uid().slice(0,8);
+    const seed = (tgPlat + ua + sc).replace(/[^a-zA-Z0-9]/g, '');
+    did = 'dev_' + (seed.slice(0, 10) || 'web') + '_' + uid().slice(0, 6);
     LS.set('cp_device_id', did);
-    ST.friends.deviceId = did;
-    save();
-  } else {
+  }
+  // Sync to state
+  if (ST.friends && ST.friends.deviceId !== did){
     ST.friends.deviceId = did;
   }
   return did;
 }
 
-/* Check if this device/user combo is a multi-account - checks BOTH directions + ban list */
+/* Multi-account check - one device, one account. Others blocked from claiming referrals. */
 async function checkMultiAccount(){
   if (!USER || !USER.id) return;
   const F = CFG.friends || {};
   if (F.antiMultiAccount === false) return;
-  // Retry if Firebase not ready yet
-  if (!window.FB || !FB_READY){
-    setTimeout(checkMultiAccount, 1000);
-    return;
-  }
+  if (!window.FB || !FB_READY){ setTimeout(checkMultiAccount, 1500); return; }
   const deviceId = getDeviceId();
   const tgUserId = USER.id;
   const fbUserId = 'tg_' + tgUserId;
   try{
-    // 1. Check if user is manually banned from control panel
+    // 1. Check ban list from control panel
     const banSnap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/banned'));
     if (banSnap.exists() && banSnap.val() === true){
-      ST.friends.blockedReferrals = true;
-      save();
+      ST.friends.blockedReferrals = true; save();
       showMultiAccountBlock('Your account has been restricted by the admin.');
       return;
     }
 
-    // 2. Check device -> user mapping (is this device used by another account?)
+    // 2. Check device -> user: is this device already used by another Telegram account?
     const devSnap = await window.FB.get(window.FB.ref(window.FB.db, 'devices/' + deviceId));
-    let existingDeviceUser = null;
-    let firstSeen = Date.now();
     if (devSnap.exists()){
       const devData = devSnap.val();
-      existingDeviceUser = devData.userId || null;
-      firstSeen = devData.firstSeen || Date.now();
-      if (existingDeviceUser && existingDeviceUser !== fbUserId){
-        // MULTI-ACCOUNT DETECTED: This device is already used by another Telegram account
-        ST.friends.blockedReferrals = true;
-        save();
-        // Log in Firebase
+      const existingUser = devData.userId;
+      if (existingUser && existingUser !== fbUserId){
+        // MULTI-ACCOUNT ON SAME DEVICE DETECTED
+        ST.friends.blockedReferrals = true; save();
+        // Log detection
         window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/multiAccount'), {
-          deviceUsedBy: existingDeviceUser, detectedAt: Date.now(), deviceId: deviceId,
-          tgUserId: tgUserId, deviceOwner: existingDeviceUser
+          deviceUsedBy: existingUser, detectedAt: Date.now(), deviceId: deviceId, tgUserId: tgUserId
         });
-        // Also add to bannedUsers list for control panel
         window.FB.set(window.FB.ref(window.FB.db, 'bannedUsers/' + fbUserId), {
-          reason: 'multi_account', deviceId: deviceId, originalDevice: existingDeviceUser,
+          reason: 'multi_account_same_device', deviceId: deviceId, originalAccount: existingUser,
           detectedAt: Date.now(), tgUserId: tgUserId, userName: USER.name || ''
         });
-        showMultiAccountBlock('This device is already linked to another account.');
+        showMultiAccountBlock('This device is already linked to another account. Referral rewards are blocked.');
         return;
       }
+      // Same user on same device - just update lastSeen
+      window.FB.set(window.FB.ref(window.FB.db, 'devices/' + deviceId), {
+        userId: fbUserId, tgUserId: tgUserId, userName: USER.name || '',
+        firstSeen: devData.firstSeen || Date.now(), lastSeen: Date.now()
+      });
+    } else {
+      // New device - register it
+      window.FB.set(window.FB.ref(window.FB.db, 'devices/' + deviceId), {
+        userId: fbUserId, tgUserId: tgUserId, userName: USER.name || '',
+        firstSeen: Date.now(), lastSeen: Date.now()
+      });
+      window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/deviceId'), deviceId);
     }
 
-    // 3. Check user -> device mapping (has this Telegram user used a different device?)
+    // 3. Check user -> device: has this user used a different device?
     const userDevSnap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/deviceId'));
     if (userDevSnap.exists()){
-      const registeredDevice = userDevSnap.val();
-      if (registeredDevice && registeredDevice !== deviceId){
-        // MULTI-DEVICE DETECTED: This user has logged in from a different device before
-        ST.friends.blockedReferrals = true;
-        save();
+      const regDev = userDevSnap.val();
+      if (regDev && regDev !== deviceId){
+        ST.friends.blockedReferrals = true; save();
         window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/multiDevice'), {
-          registeredDevice: registeredDevice, currentDevice: deviceId, detectedAt: Date.now(), tgUserId: tgUserId
+          registeredDevice: regDev, currentDevice: deviceId, detectedAt: Date.now()
         });
         window.FB.set(window.FB.ref(window.FB.db, 'bannedUsers/' + fbUserId), {
-          reason: 'multi_device', registeredDevice: registeredDevice, currentDevice: deviceId,
+          reason: 'multi_device', registeredDevice: regDev, currentDevice: deviceId,
           detectedAt: Date.now(), tgUserId: tgUserId, userName: USER.name || ''
         });
-        showMultiAccountBlock('Multiple devices detected for your account.');
+        showMultiAccountBlock('Multiple devices detected. One account per device only.');
         return;
       }
+    } else {
+      window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/deviceId'), deviceId);
     }
 
-    // 4. All clear - register this device to this user
-    ST.friends.blockedReferrals = false;
-    save();
-    // Register device -> user mapping
-    window.FB.set(window.FB.ref(window.FB.db, 'devices/' + deviceId), {
-      userId: fbUserId, tgUserId: tgUserId, firstSeen: firstSeen, lastSeen: Date.now(),
-      userName: USER.name || ''
-    });
-    // Register user -> device mapping
-    window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/deviceId'), deviceId);
-    // Update user online status
-    window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/online'), {
-      online: true, lastSeen: Date.now(), deviceId: deviceId
-    });
+    // 4. All clear
+    if (ST.friends.blockedReferrals !== false){
+      ST.friends.blockedReferrals = false; save();
+    }
   }catch(e){
-    // If Firebase fails, retry after delay
     setTimeout(checkMultiAccount, 2000);
   }
 }
 
-/* Show multi-account block page/toast with support link */
+/* Show block page with support button */
 function showMultiAccountBlock(reason){
-  const supportUrl = CFG.app.supportUrl || 'https://t.me/deepshaftOG_Support';
   const supportUser = CFG.app.supportUsername || 'deepshaftOG_Support';
-  setTimeout(() => {
-    toast('Account restricted: ' + reason, 'err', 'alert');
-  }, 1500);
-  // Show block sheet with support button
+  setTimeout(() => { toast('Account restricted: ' + reason, 'err', 'alert'); }, 1500);
   setTimeout(() => {
     if (NAVSTACK.length === 0){
       openSheet('<div class="sh-t" style="color:var(--bad)">' + I('alert') + ' Account Restricted</div>'
-        + '<div class="note mt10" style="color:var(--bad)">' + esc(reason) + '</div>'
-        + '<div class="note mt6">One account per device is allowed. Multi-accounting or using multiple devices will block your referral rewards.</div>'
+        + '<div class="note mt10" style="color:var(--bad);font-size:13px">' + esc(reason) + '</div>'
+        + '<div class="note mt6">Rule: One account per device. Multi-accounting blocks referral rewards. Referrals still count but cannot be claimed.</div>'
         + '<div class="card mt10 row" style="border-color:rgba(34,211,238,.3)">' + I('send','ic-ton') + '<div class="grow"><b>Contact Support</b><span>@' + esc(supportUser) + '</span></div></div>'
-        + '<button class="btn tonb block mt10" data-act="support">' + I('send') + 'Open @' + esc(supportUser) + '</button>'
-        + '<button class="btn ghost block mt10" data-act="close-top">Continue without referrals</button>'
-        + '<div class="note mt10" style="text-align:center">Your Telegram ID: <b class="num">' + (USER ? USER.id : '-') + '</b></div>');
+        + '<button class="btn tonb block mt10" data-act="support">' + I('send') + 'Contact @' + esc(supportUser) + '</button>'
+        + '<button class="btn ghost block mt10" data-act="close-top">Continue without referral rewards</button>'
+        + '<div class="note mt10" style="text-align:center">Your Telegram ID: <b class="num" style="color:var(--accent2)">' + (USER ? USER.id : '-') + '</b></div>');
     }
   }, 2000);
 }
 
-/* Process referral on first login - tracks Telegram user IDs properly */
+/* Process referral during loading screen - shows referrer info */
 async function processReferral(){
   if (!USER || !USER.id) return;
-  if (ST.friends.referredBy) return; // Already processed
-  // Get referral code from Telegram start_param
-  let refCode = '';
+  if (ST.friends.referredBy && ST.friends.referredByTgId) return; // Already processed
+  // Get referrer's Telegram user ID from start_param
+  let refTgId = '';
   try{
     if (TG && TG.initDataUnsafe && TG.initDataUnsafe.start_param){
       const sp = String(TG.initDataUnsafe.start_param);
-      if (sp.indexOf('ref_') === 0) refCode = sp.slice(4);
+      if (sp.indexOf('ref_') === 0) refTgId = sp.slice(4);
     }
   }catch(e){}
-  if (!refCode) return;
-  ST.friends.referredBy = refCode;
-  ST.friends.referredByTgId = 0; // Will be filled from Firebase
+  // Also check state (might have been set in initTG)
+  if (!refTgId && ST.friends.referredBy) refTgId = ST.friends.referredBy;
+  if (!refTgId) return;
+  // Convert to number (Telegram user IDs are numeric)
+  const referrerTgId = parseInt(refTgId) || refTgId;
+  if (String(referrerTgId) === String(USER.id)) return; // Can't refer yourself
+  ST.friends.referredBy = String(referrerTgId);
+  ST.friends.referredByTgId = referrerTgId;
   save();
-  // Register referral in Firebase with Telegram user IDs
+
+  // Fetch referrer's profile from Firebase and show during loading
   if (window.FB && FB_READY){
-    const tgUserId = USER.id;
-    const fbUserId = 'tg_' + tgUserId;
+    const refFbId = 'tg_' + referrerTgId;
+    const myFbId = 'tg_' + USER.id;
     try{
-      // Find referrer by referral code
-      const refSnap = await window.FB.get(window.FB.ref(window.FB.db, 'referralCodes/' + refCode));
-      if (refSnap.exists()){
-        const refData = refSnap.val();
-        const referrerFbId = typeof refData === 'string' ? refData : (refData.userId || refData);
-        const referrerTgId = typeof refData === 'object' ? (refData.tgUserId || 0) : 0;
-        if (referrerFbId && referrerFbId !== fbUserId){
-          ST.friends.referredByTgId = referrerTgId;
-          save();
-          // Record the referral with full tracking data
-          const blocked = ST.friends.blockedReferrals;
-          const refEntry = {
-            referredUserId: fbUserId,
-            referredTgId: tgUserId,
-            referredName: USER.name || '',
-            referrerUserId: referrerFbId,
-            referrerTgId: referrerTgId,
-            referralCode: refCode,
-            ts: Date.now(),
-            blocked: blocked,
-            rewarded: !blocked,
-            deviceId: getDeviceId()
-          };
-          // Store under referrer's referrals list
-          window.FB.set(window.FB.ref(window.FB.db, 'referrals/' + referrerFbId + '/' + fbUserId), refEntry);
-          // Also store under referred user's profile
-          window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/referredBy'), {
-            code: refCode, referrerId: referrerFbId, referrerTgId: referrerTgId, ts: Date.now(), blocked: blocked
-          });
-          // Increment referrer's invited count
-          const invSnap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + referrerFbId + '/invitedCount'));
-          const curCount = invSnap.exists() ? (invSnap.val() || 0) : 0;
-          window.FB.set(window.FB.ref(window.FB.db, 'users/' + referrerFbId + '/invitedCount'), curCount + 1);
-          // Log event for control panel
-          window.FB.set(window.FB.ref(window.FB.db, 'events/referral_' + fbUserId), {
-            type: 'referral', ts: Date.now(), referrerId: referrerFbId, referredId: fbUserId,
-            referrerTgId: referrerTgId, referredTgId: tgUserId, blocked: blocked
-          });
-        }
+      // Get referrer profile
+      const profSnap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + refFbId + '/profile'));
+      let refName = 'Miner', refUser = '', refAvatar = '', refBalance = 0;
+      if (profSnap.exists()){
+        const p = profSnap.val();
+        refName = p.name || 'Miner';
+        refUser = p.username || '';
+        refAvatar = p.photo || '';
+        refBalance = p.ore || 0;
+        // Store in state for display
+        ST.friends.referrerName = refName;
+        ST.friends.referrerUsername = refUser;
+        ST.friends.referrerAvatar = refAvatar;
+        save();
       }
+
+      // Record referral with full tracking
+      const blocked = ST.friends.blockedReferrals;
+      const refEntry = {
+        referredTgId: USER.id,
+        referredFbId: myFbId,
+        referredName: USER.name || '',
+        referredUsername: USER.username || '',
+        referrerTgId: referrerTgId,
+        referrerFbId: refFbId,
+        referralCode: String(referrerTgId),
+        ts: Date.now(),
+        blocked: blocked,
+        rewarded: !blocked,
+        deviceId: getDeviceId()
+      };
+      // Store under referrer's referrals list (keyed by referred user's Telegram ID)
+      window.FB.set(window.FB.ref(window.FB.db, 'referrals/' + refFbId + '/' + USER.id), refEntry);
+      // Store under referred user's profile
+      window.FB.set(window.FB.ref(window.FB.db, 'users/' + myFbId + '/referredBy'), {
+        tgId: referrerTgId, name: refName, username: refUser, avatar: refAvatar, ts: Date.now(), blocked: blocked
+      });
+      // Increment referrer's invited count
+      const invSnap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + refFbId + '/invitedCount'));
+      const cur = invSnap.exists() ? (invSnap.val() || 0) : 0;
+      window.FB.set(window.FB.ref(window.FB.db, 'users/' + refFbId + '/invitedCount'), cur + 1);
+
+      // Show referrer info during loading screen
+      showReferralWelcome(refName, refUser, refAvatar, refBalance, blocked);
     }catch(e){}
-  }
-  // Show welcome toast
-  if (!ST.friends.blockedReferrals){
-    setTimeout(() => {
-      toast('Welcome! Joined via referral. Referrer earns 0.01 TON.', 'info', 'friends');
-    }, 2500);
   }
 }
 
-/* Claim referral reward - blocked users cannot claim */
+/* Show referrer welcome during loading screen */
+function showReferralWelcome(name, username, avatar, balance, blocked){
+  const avatarHtml = avatar
+    ? '<img src="' + esc(avatar) + '" style="width:56px;height:56px;border-radius:50%;border:2px solid var(--accent);object-fit:cover">'
+    : '<span style="width:56px;height:56px;border-radius:50%;border:2px solid var(--accent);display:inline-block;background:var(--card2)">' + avatarSVG(name) + '</span>';
+  setTimeout(() => {
+    openSheet('<div style="text-align:center;padding:10px 0">'
+      + avatarHtml
+      + '<div class="tt mt10" style="font-size:16px">' + esc(name) + '</div>'
+      + (username ? '<div class="td mut xs mt4">@' + esc(username) + '</div>' : '')
+      + '<div class="note mt6">You joined via referral from <b style="color:var(--accent)">' + esc(name) + '</b>'
+      + (balance > 0 ? '<br>Balance: <b class="num" style="color:var(--accent2)">' + fmt(balance) + ' ORE</b>' : '')
+      + '</div>'
+      + (blocked
+        ? '<div class="note mt10" style="color:var(--bad)">Your referral rewards are blocked (multi-account detected on this device).</div>'
+        : '<div class="note mt10" style="color:var(--good)">' + esc(name) + ' earns 0.01 TON for referring you!</div>')
+      + '</div>'
+      + '<button class="btn block mt10" data-act="close-top">Start Mining</button>');
+  }, (CFG.ui.splashMinMs || 1100) + 600);
+}
+
+/* Claim referral reward */
 function claimReferralReward(){
   if (ST.friends.blockedReferrals){
-    toast('Referral rewards blocked: multi-account detected', 'err', 'alert');
-    sfx('err');
+    toast('Blocked: multi-account detected on this device', 'err', 'alert'); sfx('err');
     return;
   }
-  if ((ST.friends.invited || 0) <= 0){
-    toast('No referrals to claim yet', 'info');
-    return;
-  }
+  if ((ST.friends.invited || 0) <= 0){ toast('No referrals to claim', 'info'); return; }
   const F = CFG.friends || {};
   const rewardOre = F.referralTonReward ? F.referralTonReward * (CFG.economy.orePerTon || 20000) : (F.bonusOre || 200);
   const claimable = ST.friends.invited || 0;
-  const totalReward = rewardOre * claimable;
-  ST.ore += totalReward;
-  ST.stats.mined += totalReward;
-  ST.friends.earnedOre = (ST.friends.earnedOre || 0) + totalReward;
+  const total = rewardOre * claimable;
+  ST.ore += total; ST.stats.mined += total;
+  ST.friends.earnedOre = (ST.friends.earnedOre || 0) + total;
   ST.friends.invited = 0;
   sfx('coin'); hapOk(); confettiAt(140, 140, 60);
-  toast('Referral reward claimed: +' + fmt(totalReward) + ' ORE (' + fmtTon(F.referralTonReward * claimable) + ' TON)', 'gold', 'gift');
+  toast('Claimed: +' + fmt(total) + ' ORE (' + fmtTon(F.referralTonReward * claimable) + ' TON)', 'gold', 'gift');
   save(); updChips(true);
 }
 
-/* Register own referral code in Firebase with Telegram user ID */
+/* Register referral code (= Telegram user ID) in Firebase */
 function registerReferralCode(){
   if (!window.FB || !FB_READY || !USER || !USER.id) return;
-  const tgUserId = USER.id;
-  const fbUserId = 'tg_' + tgUserId;
   try{
-    window.FB.set(window.FB.ref(window.FB.db, 'referralCodes/' + ST.friends.code), {
-      userId: fbUserId, tgUserId: tgUserId, userName: USER.name || '', registeredAt: Date.now()
+    window.FB.set(window.FB.ref(window.FB.db, 'referralCodes/' + USER.id), {
+      userId: 'tg_' + USER.id, tgUserId: USER.id, userName: USER.name || '',
+      username: USER.username || '', photo: USER.photo || '', registeredAt: Date.now()
     });
-    // Also register under user's profile
-    window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/referralCode'), ST.friends.code);
+    window.FB.set(window.FB.ref(window.FB.db, 'users/tg_' + USER.id + '/referralCode'), String(USER.id));
   }catch(e){}
 }
 
-/* Listen for new referrals in real-time - counts unblocked referrals */
+/* Listen for new referrals in real-time */
 function listenReferrals(){
   if (!window.FB || !FB_READY || !USER || !USER.id) return;
   const fbUserId = 'tg_' + USER.id;
@@ -1286,27 +1290,23 @@ function listenReferrals(){
     window.FB.onValue(window.FB.ref(window.FB.db, 'referrals/' + fbUserId), (snap) => {
       if (snap.exists()){
         const refs = snap.val();
-        // Count unblocked referrals (blocked referrals still count but can't be claimed)
         const unblocked = Object.values(refs).filter(r => !r.blocked).length;
-        const totalCount = Object.keys(refs).length;
-        const oldCount = ST.friends.invited || 0;
+        const total = Object.keys(refs).length;
+        const old = ST.friends.invited || 0;
         ST.friends.invited = unblocked;
-        ST.friends.totalInvited = totalCount;
+        ST.friends.totalInvited = total;
         save();
-        if (unblocked > oldCount){
+        if (unblocked > old){
           if (VIEW === 'friends') go('friends', true);
           toast('New referral joined! +' + (CFG.friends.referralTonReward || 0.01) + ' TON ready to claim', 'gold', 'friends');
         }
       }
     });
-    // Also listen for ban status changes from control panel
+    // Listen for ban changes
     window.FB.onValue(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/banned'), (snap) => {
-      if (snap.exists() && snap.val() === true){
-        if (!ST.friends.blockedReferrals){
-          ST.friends.blockedReferrals = true;
-          save();
-          showMultiAccountBlock('Your account has been banned by the admin.');
-        }
+      if (snap.exists() && snap.val() === true && !ST.friends.blockedReferrals){
+        ST.friends.blockedReferrals = true; save();
+        showMultiAccountBlock('Your account has been banned by the admin.');
       }
     });
   }catch(e){}
@@ -2060,7 +2060,7 @@ function rTasks(){
 }
 
 /* ================================ 10. SCREEN: FRIENDS ================================== */
-function refLink(){ return (CFG.app.webAppUrl || ('https://t.me/' + (CFG.app.botUsername || 'your_bot') + '/mine')) + '?startapp=ref_' + ST.friends.code; }
+function refLink(){ return (CFG.app.webAppUrl || ('https://t.me/' + (CFG.app.botUsername || 'your_bot') + '/mine')) + '?startapp=ref_' + (USER ? USER.id : ST.friends.code); }
 function rFriends(){
   const F = CFG.friends, G = CFG.currency.gem.name, O = CFG.currency.ore.name;
   if (F.enabled === false) return '<div class="card center" style="text-align:center;margin-top:30%"><div class="td mut">Friends module is disabled.</div></div>';
@@ -2100,7 +2100,17 @@ function rFriends(){
     ? '<button class="btn block pulse mt10" data-act="claim-referral">' + I('gift') + 'Claim ' + fmt(refRewardOre * invited) + ' ' + O + ' (' + fmtTon(refRewardTon * invited) + ' TON)</button>'
     : '')
   + (ST.friends.referredBy
-    ? '<div class="card mt10 row">' + I('shield','ic-ton') + '<div class="grow"><div class="tt sm">Joined with invite code <b style="color:var(--accent2)">' + esc(ST.friends.referredBy) + '</b></div><div class="td mut">Your referrer received the referral reward.</div></div></div>'
+    ? '<div class="stitle">Your Referrer</div>'
+    + '<div class="card mt10" style="padding:14px">'
+      + '<div class="row" style="gap:12px">'
+        + (ST.friends.referrerAvatar
+          ? '<img src="' + esc(ST.friends.referrerAvatar) + '" style="width:48px;height:48px;border-radius:50%;border:2px solid var(--accent);object-fit:cover;flex:none">'
+          : '<span style="width:48px;height:48px;border-radius:50%;border:2px solid var(--accent);display:inline-flex;align-items:center;justify-content:center;background:var(--card2);flex:none">' + avatarSVG(ST.friends.referrerName || 'M') + '</span>')
+        + '<div class="grow"><div class="tt sm" style="font-size:15px">' + esc(ST.friends.referrerName || 'Miner') + '</div>'
+        + (ST.friends.referrerUsername ? '<div class="td mut xs mt2">@' + esc(ST.friends.referrerUsername) + '</div>' : '')
+        + '<div class="td mut xs mt2">Telegram ID: <b class="num" style="color:var(--accent2)">' + esc(String(ST.friends.referredBy)) + '</b></div>'
+        + '</div></div>'
+    + '</div>'
     : '')
   + '<div class="card mt10"><div class="tt sm">How it works</div>'
     + '<div class="note mt6">1. Share your personal link with friends.<br>2. They open the app through your link.<br>3. You receive ' + fmtTon(refRewardTon) + ' TON per referral + ' + F.commissionPercent + '% of their mining forever.<br>4. One account per device - multi-accounts are blocked from claiming rewards.</div>'
@@ -3263,10 +3273,18 @@ function initTG(){
   try{
     const u = TG.initDataUnsafe && TG.initDataUnsafe.user;
     if (u) USER = { id: u.id, name: [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Miner', username: u.username || '', photo: u.photo_url || '' };
+    // Set referral code to Telegram user ID
+    if (USER && USER.id){
+      ST.friends.code = String(USER.id);
+      if (!ST.friends.deviceId) getDeviceId();
+    }
     const sp = TG.initDataUnsafe && TG.initDataUnsafe.start_param;
-    if (sp && String(sp).indexOf('ref_') === 0 && String(sp).slice(4) !== ST.friends.code){
-      ST.friends.referredBy = String(sp).slice(4);
-      save();
+    if (sp && String(sp).indexOf('ref_') === 0){
+      const refCode = String(sp).slice(4);
+      if (refCode !== ST.friends.code && !ST.friends.referredBy){
+        ST.friends.referredBy = refCode;
+        save();
+      }
     }
   }catch(e){}
   try{
