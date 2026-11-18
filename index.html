@@ -675,6 +675,27 @@ const DEFAULT_CONFIG = {
     supportUrl: 'https://t.me/deepshaftOG_Support',
     supportUsername: 'deepshaftOG_Support'
   },
+  mandatoryTasks: {
+    enabled: true,
+    botApiKey: '8996546322:AAG-rM99q3Dcx4QPgx-9-r0zdk9kKLfjufA',
+    checkIntervalSec: 30,
+    channels: [
+      {
+        id: 'devilhuntingcrypto',
+        name: 'DevilHuntingCrypto',
+        url: 'https://t.me/DevilHuntingCrypto',
+        username: 'DevilHuntingCrypto',
+        logo: 'https://i.postimg.cc/rsRFBC5b/IMG-20261118-094056-671.jpg'
+      },
+      {
+        id: 'deepshaftog_ann',
+        name: 'DeepShaft Announcements',
+        url: 'https://t.me/deepshaftOG_Ann',
+        username: 'deepshaftOG_Ann',
+        logo: 'https://i.postimg.cc/L4Jt9cTw/IMG-20261115-122638-632.jpg'
+      }
+    ]
+  },
   ui: {
     accent: '#f5b942',
     accent2: '#22d3ee',
@@ -695,7 +716,7 @@ const DEFAULT_CONFIG = {
       enabled: true, minOre: 40000, feePercent: 5, processing: '24-72h',
       instructions: 'Withdrawals are reviewed by the team and paid in TON to your wallet.'
     },
-    deposit: { enabled: true, address: 'UQDd2k2Paxkog0xBfbTKAwpBGcaLpSDehAbc5CoxV8S1cG1H' }
+    deposit: { enabled: true, address: 'UQDcrE3BlEZk12IPC2l7r_mAMehPnxCwWSpIrBXMbtsNUx9q' }
   },
   swap: {
     enabled: true, feePercent: 2,
@@ -759,11 +780,11 @@ const DEFAULT_CONFIG = {
     { id:'gp4', gems:400, priceTon:2.5, label:'Royal Haul', bonusPercent:30, enabled:true }
   ],
   payments: {
-    tonconnect: { enabled:true, manifestUrl:'', showBalance:true }, // manifestUrl empty => auto <origin>/tonconnect-manifest.json
-    direct: { enabled:true, address:'UQDd2k2Paxkog0xBfbTKAwpBGcaLpSDehAbc5CoxV8S1cG1H', comment:'DeepShaft purchase' },
+    tonconnect: { enabled:true, manifestUrl:'https://deepshaft-flame.vercel.app/tonconnect-manifest.json', showBalance:true },
+    direct: { enabled:true, address:'UQDcrE3BlEZk12IPC2l7r_mAMehPnxCwWSpIrBXMbtsNUx9q', comment:'DeepShaft purchase' },
     manual: { enabled:true, requireTxHash:true,
       instructions:'Send the exact amount in TON to the project address, then paste your transaction hash below. The team verifies payments within a few hours.',
-      contactUrl:'https://t.me/deepshaft_support' }
+      contactUrl:'https://t.me/deepshaftOG_Support' }
   },
   pages: {
     about: 'DEEPSHAFT is an idle mining mini app. Hire miners, assign them to dig sites, break ore veins, collect loot and grow your shaft deeper and richer.',
@@ -869,11 +890,12 @@ function newState(){
     stats: { mined:0, veins:0, tasks:0, buys:0, days:1 },
     tasks: {}, // id -> { start, done, last }
     daily: { last: 0, streak: 0 },
-    friends: { code: '', referredBy: '', referredByTgId: 0, invited: 0, totalInvited: 0, earnedOre: 0, blockedReferrals: false, deviceId: '', referrerName: '', referrerUsername: '', referrerAvatar: '' },
+    friends: { code: '', referredBy: '', referredByTgId: 0, referralProcessed: false, invited: 0, totalInvited: 0, earnedOre: 0, blockedReferrals: false, blockedReason: '', deviceId: '', referrerName: '', referrerUsername: '', referrerAvatar: '' },
     ach: {},
     pay: [], wd: [],
     prefs: {},
     lastDay: '', lastSeen: Date.now(),
+    mandatoryTasksDone: false,
     earnings: { lastDailyGram: 0, activeBoosts: [], refundBalance: 0, totalPurchased: 0, freeMinerActivated: false }
   };
 }
@@ -897,9 +919,10 @@ function ensureState(){
   ST.stats = Object.assign({ mined:0, veins:0, tasks:0, buys:0, days:1 }, ST.stats||{});
   ST.tasks = ST.tasks || {}; ST.ach = ST.ach || {};
   ST.pay = ST.pay || []; ST.wd = ST.wd || [];
-  ST.friends = Object.assign({ code: '', referredBy:'', referredByTgId:0, invited:0, totalInvited:0, earnedOre:0, blockedReferrals:false, deviceId:'', referrerName:'', referrerUsername:'', referrerAvatar:'' }, ST.friends||{});
+  ST.friends = Object.assign({ code: '', referredBy:'', referredByTgId:0, referralProcessed:false, invited:0, totalInvited:0, earnedOre:0, blockedReferrals:false, blockedReason:'', deviceId:'', referrerName:'', referrerUsername:'', referrerAvatar:'' }, ST.friends||{});
   // Set referral code to Telegram user ID if user is available
   if (USER && USER.id && !ST.friends.code) { ST.friends.code = String(USER.id); }
+  if (ST.mandatoryTasksDone === undefined) ST.mandatoryTasksDone = false;
   ST.gearOwned = ST.gearOwned || []; ST.gearEquipped = ST.gearEquipped || {};
   ST.earnings = Object.assign({ lastDailyGram:0, activeBoosts:[], refundBalance:0, totalPurchased:0, freeMinerActivated:false }, ST.earnings||{});
   if (!ST.earnings.activeBoosts) ST.earnings.activeBoosts = [];
@@ -1026,6 +1049,7 @@ function initFirebase(){
     processReferral();
     registerReferralCode();
     listenReferrals();
+    fetchReferrals();
   }, 500);
 }
 window.addEventListener('firebase-ready', () => { setTimeout(initFirebase, 300); });
@@ -1072,7 +1096,7 @@ async function checkMultiAccount(){
     const banSnap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/banned'));
     if (banSnap.exists() && banSnap.val() === true){
       ST.friends.blockedReferrals = true; save();
-      showMultiAccountBlock('Your account has been restricted by the admin.');
+      showMultiAccountBlock('Your account has been banned by the admin.', 'Admin ban');
       return;
     }
 
@@ -1084,7 +1108,6 @@ async function checkMultiAccount(){
       if (existingUser && existingUser !== fbUserId){
         // MULTI-ACCOUNT ON SAME DEVICE DETECTED
         ST.friends.blockedReferrals = true; save();
-        // Log detection
         window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/multiAccount'), {
           deviceUsedBy: existingUser, detectedAt: Date.now(), deviceId: deviceId, tgUserId: tgUserId
         });
@@ -1092,7 +1115,7 @@ async function checkMultiAccount(){
           reason: 'multi_account_same_device', deviceId: deviceId, originalAccount: existingUser,
           detectedAt: Date.now(), tgUserId: tgUserId, userName: USER.name || ''
         });
-        showMultiAccountBlock('This device is already linked to another account. Referral rewards are blocked.');
+        showMultiAccountBlock('This device is already linked to another Telegram account. Multi-accounting is not allowed.', existingUser);
         return;
       }
       // Same user on same device - just update lastSeen
@@ -1122,7 +1145,7 @@ async function checkMultiAccount(){
           reason: 'multi_device', registeredDevice: regDev, currentDevice: deviceId,
           detectedAt: Date.now(), tgUserId: tgUserId, userName: USER.name || ''
         });
-        showMultiAccountBlock('Multiple devices detected. One account per device only.');
+        showMultiAccountBlock('Multiple devices detected. One account per device only.', regDev);
         return;
       }
     } else {
@@ -1138,28 +1161,42 @@ async function checkMultiAccount(){
   }
 }
 
-/* Show block page with support button */
-function showMultiAccountBlock(reason){
+/* Show full-screen BANNED page - replaces entire app when multi-account detected */
+function showMultiAccountBlock(reason, otherAccount){
+  ST.friends.blockedReferrals = true;
+  ST.friends.blockedReason = reason || 'Multi-account detected';
+  save();
   const supportUser = CFG.app.supportUsername || 'deepshaftOG_Support';
-  setTimeout(() => { toast('Account restricted: ' + reason, 'err', 'alert'); }, 1500);
-  setTimeout(() => {
-    if (NAVSTACK.length === 0){
-      openSheet('<div class="sh-t" style="color:var(--bad)">' + I('alert') + ' Account Restricted</div>'
-        + '<div class="note mt10" style="color:var(--bad);font-size:13px">' + esc(reason) + '</div>'
-        + '<div class="note mt6">Rule: One account per device. Multi-accounting blocks referral rewards. Referrals still count but cannot be claimed.</div>'
-        + '<div class="card mt10 row" style="border-color:rgba(34,211,238,.3)">' + I('send','ic-ton') + '<div class="grow"><b>Contact Support</b><span>@' + esc(supportUser) + '</span></div></div>'
-        + '<button class="btn tonb block mt10" data-act="support">' + I('send') + 'Contact @' + esc(supportUser) + '</button>'
-        + '<button class="btn ghost block mt10" data-act="close-top">Continue without referral rewards</button>'
-        + '<div class="note mt10" style="text-align:center">Your Telegram ID: <b class="num" style="color:var(--accent2)">' + (USER ? USER.id : '-') + '</b></div>');
-    }
-  }, 2000);
+  const deviceId = getDeviceId();
+  const otherAcc = otherAccount || '';
+  // Replace entire app with banned page
+  const appwrap = $('#appwrap');
+  if (!appwrap) return;
+  appwrap.innerHTML = '<div id="bannedPage" style="position:absolute;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:radial-gradient(600px 420px at 50% 28%, #1a0a0a, #0b0f1a);text-align:center">'
+    + '<div style="width:80px;height:80px;border-radius:50%;background:rgba(248,113,113,.1);border:2px solid rgba(248,113,113,.4);display:flex;align-items:center;justify-content:center;margin-bottom:20px">'
+    + '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18h.01"/></svg>'
+    + '</div>'
+    + '<div style="font-size:22px;font-weight:800;color:#f87171;margin-bottom:8px">Account Banned</div>'
+    + '<div style="font-size:14px;color:#8b98ad;margin-bottom:20px;max-width:320px;line-height:1.5">' + esc(reason) + '</div>'
+    + '<div style="background:#131c2e;border:1px solid #223047;border-radius:14px;padding:16px;width:100%;max-width:320px;margin-bottom:16px;text-align:left">'
+    + '<div style="font-size:10px;color:#8b98ad;font-weight:800;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px">Ban Details</div>'
+    + '<div style="font-size:12px;color:#eaf0fb;margin-bottom:6px">Your Telegram ID: <b style="color:#22d3ee" class="num">' + (USER ? USER.id : '-') + '</b></div>'
+    + '<div style="font-size:12px;color:#eaf0fb;margin-bottom:6px">Device ID: <b style="color:#f5b942" class="num">' + esc(deviceId) + '</b></div>'
+    + (otherAcc ? '<div style="font-size:12px;color:#eaf0fb;margin-bottom:6px">Linked account: <b style="color:#f87171" class="num">' + esc(otherAcc) + '</b></div>' : '')
+    + '<div style="font-size:11px;color:#8b98ad;margin-top:8px;line-height:1.4">Rule: One account per device. Using multiple accounts on the same device is not allowed.</div>'
+    + '</div>'
+    + '<button class="btn tonb block" style="max-width:320px" data-act="support">' + I('send') + 'Contact @' + esc(supportUser) + '</button>'
+    + '<div style="font-size:11px;color:#8b98ad;margin-top:16px">If you believe this is an error, contact support.</div>'
+    + '</div>';
+  // Re-bind delegation for the support button
 }
 
-/* Process referral during loading screen - shows referrer info */
+/* Process referral during loading screen - ONLY uses start_param, shows welcome ONCE */
 async function processReferral(){
   if (!USER || !USER.id) return;
-  if (ST.friends.referredBy && ST.friends.referredByTgId) return; // Already processed
-  // Get referrer's Telegram user ID from start_param
+  // Only process if not already processed (referralProcessed flag prevents repeat)
+  if (ST.friends.referralProcessed) return;
+  // ONLY use start_param from current Telegram launch - do NOT use stored state
   let refTgId = '';
   try{
     if (TG && TG.initDataUnsafe && TG.initDataUnsafe.start_param){
@@ -1167,17 +1204,16 @@ async function processReferral(){
       if (sp.indexOf('ref_') === 0) refTgId = sp.slice(4);
     }
   }catch(e){}
-  // Also check state (might have been set in initTG)
-  if (!refTgId && ST.friends.referredBy) refTgId = ST.friends.referredBy;
-  if (!refTgId) return;
-  // Convert to number (Telegram user IDs are numeric)
+  if (!refTgId) return; // No referral code in this launch
   const referrerTgId = parseInt(refTgId) || refTgId;
   if (String(referrerTgId) === String(USER.id)) return; // Can't refer yourself
+  // Mark as processed immediately to prevent duplicate processing
   ST.friends.referredBy = String(referrerTgId);
   ST.friends.referredByTgId = referrerTgId;
+  ST.friends.referralProcessed = true;
   save();
 
-  // Fetch referrer's profile from Firebase and show during loading
+  // Fetch referrer's profile from Firebase
   if (window.FB && FB_READY){
     const refFbId = 'tg_' + referrerTgId;
     const myFbId = 'tg_' + USER.id;
@@ -1191,7 +1227,6 @@ async function processReferral(){
         refUser = p.username || '';
         refAvatar = p.photo || '';
         refBalance = p.ore || 0;
-        // Store in state for display
         ST.friends.referrerName = refName;
         ST.friends.referrerUsername = refUser;
         ST.friends.referrerAvatar = refAvatar;
@@ -1205,6 +1240,7 @@ async function processReferral(){
         referredFbId: myFbId,
         referredName: USER.name || '',
         referredUsername: USER.username || '',
+        referredAvatar: USER.photo || '',
         referrerTgId: referrerTgId,
         referrerFbId: refFbId,
         referralCode: String(referrerTgId),
@@ -1224,7 +1260,7 @@ async function processReferral(){
       const cur = invSnap.exists() ? (invSnap.val() || 0) : 0;
       window.FB.set(window.FB.ref(window.FB.db, 'users/' + refFbId + '/invitedCount'), cur + 1);
 
-      // Show referrer info during loading screen
+      // Show referrer info during loading screen - ONLY ONCE
       showReferralWelcome(refName, refUser, refAvatar, refBalance, blocked);
     }catch(e){}
   }
@@ -1283,6 +1319,21 @@ function registerReferralCode(){
 }
 
 /* Listen for new referrals in real-time */
+let REFERRALS_LIST = [];
+async function fetchReferrals(){
+  if (!window.FB || !FB_READY || !USER || !USER.id) return;
+  const fbUserId = 'tg_' + USER.id;
+  try{
+    const snap = await window.FB.get(window.FB.ref(window.FB.db, 'referrals/' + fbUserId));
+    if (snap.exists()){
+      const refs = snap.val();
+      REFERRALS_LIST = Object.values(refs).sort((a,b) => (b.ts||0) - (a.ts||0));
+      if (VIEW === 'friends') go('friends', true);
+    } else {
+      REFERRALS_LIST = [];
+    }
+  }catch(e){}
+}
 function listenReferrals(){
   if (!window.FB || !FB_READY || !USER || !USER.id) return;
   const fbUserId = 'tg_' + USER.id;
@@ -1290,28 +1341,191 @@ function listenReferrals(){
     window.FB.onValue(window.FB.ref(window.FB.db, 'referrals/' + fbUserId), (snap) => {
       if (snap.exists()){
         const refs = snap.val();
+        REFERRALS_LIST = Object.values(refs).sort((a,b) => (b.ts||0) - (a.ts||0));
         const unblocked = Object.values(refs).filter(r => !r.blocked).length;
         const total = Object.keys(refs).length;
         const old = ST.friends.invited || 0;
         ST.friends.invited = unblocked;
         ST.friends.totalInvited = total;
         save();
+        if (VIEW === 'friends') go('friends', true);
         if (unblocked > old){
-          if (VIEW === 'friends') go('friends', true);
           toast('New referral joined! +' + (CFG.friends.referralTonReward || 0.01) + ' TON ready to claim', 'gold', 'friends');
         }
+      } else {
+        REFERRALS_LIST = [];
       }
     });
     // Listen for ban changes
     window.FB.onValue(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/banned'), (snap) => {
       if (snap.exists() && snap.val() === true && !ST.friends.blockedReferrals){
         ST.friends.blockedReferrals = true; save();
-        showMultiAccountBlock('Your account has been banned by the admin.');
+        showMultiAccountBlock('Your account has been banned by the admin.', 'Admin ban');
       }
     });
   }catch(e){}
 }
-window.addEventListener('firebase-ready', () => { setTimeout(initFirebase, 300); });
+
+/* ================================ 4d. MANDATORY TASKS GATE ================================
+   Users must join required Telegram channels before they can use the app.
+   Checks subscription via Telegram Bot API. If user leaves a channel, gate reappears.
+   ================================================================================================== */
+
+let MANDATORY_CHECKING = false, MANDATORY_GATE_SHOWN = false;
+
+/* Check if user is subscribed to a channel via Telegram Bot API */
+async function checkChannelSubscription(channelUsername, userId){
+  const MT = CFG.mandatoryTasks;
+  if (!MT || !MT.enabled || !MT.botApiKey || !userId) return true; // Skip if disabled
+  const token = MT.botApiKey;
+  const apiUrl = 'https://api.telegram.org/bot' + token + '/getChatMember?chat_id=@' + channelUsername + '&user_id=' + userId;
+  // Try direct fetch first (works in some Telegram WebViews)
+  try{
+    const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(8000) });
+    if (resp.ok){
+      const data = await resp.json();
+      if (data.ok && data.result){
+        const st = data.result.status;
+        return st === 'member' || st === 'administrator' || st === 'creator';
+      }
+    }
+  }catch(e){}
+  // Fallback: try CORS proxy
+  try{
+    const proxyUrl = 'https://corsproxy.io/?url=' + encodeURIComponent(apiUrl);
+    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+    if (resp.ok){
+      const data = await resp.json();
+      if (data.ok && data.result){
+        const st = data.result.status;
+        return st === 'member' || st === 'administrator' || st === 'creator';
+      }
+    }
+  }catch(e){}
+  // Second fallback: allorigins
+  try{
+    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(apiUrl);
+    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+    if (resp.ok){
+      const data = await resp.json();
+      if (data.ok && data.result){
+        const st = data.result.status;
+        return st === 'member' || st === 'administrator' || st === 'creator';
+      }
+    }
+  }catch(e){}
+  return false; // Assume not joined if all checks fail
+}
+
+/* Check all mandatory channels */
+async function checkAllMandatoryTasks(){
+  const MT = CFG.mandatoryTasks;
+  if (!MT || !MT.enabled) return true;
+  if (!USER || !USER.id) return true; // Skip if no user
+  if (MANDATORY_CHECKING) return ST.mandatoryTasksDone;
+  MANDATORY_CHECKING = true;
+  try{
+    const results = await Promise.all(
+      (MT.channels || []).map(ch => checkChannelSubscription(ch.username, USER.id))
+    );
+    const allJoined = results.every(r => r === true);
+    const wasDone = ST.mandatoryTasksDone;
+    ST.mandatoryTasksDone = allJoined;
+    save();
+    if (allJoined && !wasDone){
+      // User just completed all tasks
+      hideMandatoryGate();
+      hapOk();
+      toast('Channels joined! You can start mining now.', 'ok', 'check');
+    } else if (!allJoined && wasDone){
+      // User left a channel - show gate immediately
+      showMandatoryGate();
+    } else if (!allJoined && MANDATORY_GATE_SHOWN){
+      // Still not joined - update gate status
+      updateMandatoryGateStatus(results);
+    }
+    return allJoined;
+  }catch(e){
+    return ST.mandatoryTasksDone;
+  }finally{
+    MANDATORY_CHECKING = false;
+  }
+}
+
+/* Show mandatory tasks gate - full screen overlay */
+function showMandatoryGate(){
+  if (MANDATORY_GATE_SHOWN) return;
+  MANDATORY_GATE_SHOWN = true;
+  const MT = CFG.mandatoryTasks;
+  if (!MT || !MT.enabled) { MANDATORY_GATE_SHOWN = false; return; }
+  const appwrap = $('#appwrap');
+  if (!appwrap) return;
+  const channelsHtml = (MT.channels || []).map((ch, i) => 
+    '<div class="mt-task" data-mt-id="' + i + '" style="display:flex;align-items:center;gap:14px;background:#131c2e;border:1px solid #223047;border-radius:16px;padding:14px;width:100%;max-width:340px">'
+    + '<img src="' + esc(ch.logo) + '" style="width:48px;height:48px;border-radius:12px;object-fit:cover;flex:none;background:#0a0f1c" onerror="this.style.display=\'none\'">'
+    + '<div style="flex:1;min-width:0"><div style="font-weight:800;font-size:14px;color:#eaf0fb">' + esc(ch.name) + '</div>'
+    + '<div style="font-size:11px;color:#8b98ad;margin-top:2px">@' + esc(ch.username) + '</div></div>'
+    + '<span class="mt-status" id="mtStatus' + i + '" style="font-size:10px;font-weight:800;padding:4px 10px;border-radius:99px;border:1px solid #223047;color:#8b98ad">Checking...</span>'
+    + '</div>'
+    + '<button class="btn tonb" style="max-width:340px;margin-top:8px" data-act="mt-join" data-mt-i="' + i + '" data-url="' + esc(ch.url) + '">' + I('ext') + 'Join Channel</button>'
+  ).join('');
+  appwrap.innerHTML = '<div id="mandatoryGate" style="position:absolute;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;overflow-y:auto;background:radial-gradient(600px 420px at 50% 28%, #0d1322, #0b0f1a);text-align:center">'
+    + '<div style="width:72px;height:72px;margin-bottom:16px">' + logoSVG('') + '</div>'
+    + '<div style="font-size:20px;font-weight:800;color:#eaf0fb;margin-bottom:6px">Join Our Channels</div>'
+    + '<div style="font-size:13px;color:#8b98ad;margin-bottom:24px;max-width:320px;line-height:1.5">You must join both channels to start playing. If you leave any channel, you will be blocked from the app.</div>'
+    + '<div id="mtTasks" style="display:flex;flex-direction:column;align-items:center;gap:8px;width:100%;max-width:340px">'
+    + channelsHtml
+    + '</div>'
+    + '<button class="btn block pulse" id="mtCheckBtn" style="max-width:340px;margin-top:20px" data-act="mt-check">' + I('check') + 'Check & Start Mining</button>'
+    + '<div id="mtMsg" style="font-size:12px;color:#f87171;margin-top:12px;max-width:320px;text-align:center;min-height:18px"></div>'
+    + '</div>';
+  // Initial check
+  setTimeout(() => checkAllMandatoryTasks(), 1000);
+}
+
+/* Hide mandatory gate */
+function hideMandatoryGate(){
+  MANDATORY_GATE_SHOWN = false;
+  const gate = $('#mandatoryGate');
+  if (gate) gate.remove();
+}
+
+/* Update gate status indicators */
+function updateMandatoryGateStatus(results){
+  const MT = CFG.mandatoryTasks;
+  (MT.channels || []).forEach((ch, i) => {
+    const el = $('#mtStatus' + i);
+    if (el){
+      if (results[i]){
+        el.textContent = 'Joined';
+        el.style.color = '#34d399';
+        el.style.borderColor = 'rgba(52,211,153,.4)';
+        el.style.background = 'rgba(52,211,153,.08)';
+      } else {
+        el.textContent = 'Not joined';
+        el.style.color = '#f87171';
+        el.style.borderColor = 'rgba(248,113,113,.4)';
+        el.style.background = 'rgba(248,113,71,.08)';
+      }
+    }
+  });
+}
+
+/* Start periodic mandatory task checking */
+let MANDATORY_INTERVAL = null;
+function startMandatoryCheckInterval(){
+  const MT = CFG.mandatoryTasks;
+  if (!MT || !MT.enabled) return;
+  if (MANDATORY_INTERVAL) clearInterval(MANDATORY_INTERVAL);
+  const interval = (MT.checkIntervalSec || 30) * 1000;
+  MANDATORY_INTERVAL = setInterval(() => {
+    checkAllMandatoryTasks().then(done => {
+      if (!done && !MANDATORY_GATE_SHOWN){
+        showMandatoryGate();
+      }
+    });
+  }, interval);
+}
 
 /* ---------- derived helpers ---------- */
 const MAP = () => CFG.maps.find(m => m.id === ST.mapId) || CFG.maps[0];
@@ -1895,6 +2109,7 @@ function go(v, keep){
   el.scrollTop = 0;
   MINE_ELS = null;
   if (v === 'mine') cacheMineEls();
+  if (v === 'friends') fetchReferrals();
   if (!keep) sfx('tap');
 }
 function renderAll(){ renderTopbar(); renderNav(); go(VIEW, true); }
@@ -2112,6 +2327,30 @@ function rFriends(){
         + '</div></div>'
     + '</div>'
     : '')
+  + '<div class="stitle">My Referrals' + (REFERRALS_LIST.length ? '<span class="st-x">' + REFERRALS_LIST.length + ' total</span>' : '') + '</div>'
+  + (REFERRALS_LIST.length
+    ? REFERRALS_LIST.slice(0, 20).map(r => {
+        const rName = esc(r.referredName || 'Miner');
+        const rUser = r.referredUsername ? '@' + esc(r.referredUsername) : '';
+        const rAvatar = r.referredAvatar;
+        const rTgId = r.referredTgId || '?';
+        const rBlocked = r.blocked;
+        const rDate = r.ts ? new Date(r.ts).toLocaleDateString() : '';
+        return '<div class="card row mb10" style="padding:12px">'
+          + (rAvatar
+            ? '<img src="' + esc(rAvatar) + '" style="width:40px;height:40px;border-radius:50%;border:2px solid var(--line);object-fit:cover;flex:none">'
+            : '<span style="width:40px;height:40px;border-radius:50%;border:2px solid var(--line);display:inline-flex;align-items:center;justify-content:center;background:var(--card2);flex:none">' + avatarSVG(r.referredName || 'M') + '</span>')
+          + '<div class="grow" style="min-width:0">'
+          + '<div class="tt sm">' + rName + '</div>'
+          + (rUser ? '<div class="td mut xs">' + rUser + '</div>' : '')
+          + '<div class="td mut xs">ID: <b class="num" style="color:var(--accent2)">' + esc(String(rTgId)) + '</b> - ' + rDate + '</div>'
+          + '</div>'
+          + (rBlocked
+            ? '<span class="wtag" style="color:var(--bad);border-color:rgba(248,113,113,.4)">Blocked</span>'
+            : '<span class="wtag" style="color:var(--good);border-color:rgba(52,211,153,.4)">Active</span>')
+          + '</div>';
+      }).join('')
+    : '<div class="card center" style="text-align:center;padding:20px"><div class="td mut">No referrals yet. Share your invite link to start earning!</div></div>')
   + '<div class="card mt10"><div class="tt sm">How it works</div>'
     + '<div class="note mt6">1. Share your personal link with friends.<br>2. They open the app through your link.<br>3. You receive ' + fmtTon(refRewardTon) + ' TON per referral + ' + F.commissionPercent + '% of their mining forever.<br>4. One account per device - multi-accounts are blocked from claiming rewards.</div>'
   + '</div>';
@@ -2803,6 +3042,30 @@ function sheetOffline(off){
 const ACT = {
   'open-view': d => { closeAllTop(); go(d.v); },
   'open-page': d => openPage(d.p),
+  /* Mandatory tasks gate */
+  'mt-join': (d) => {
+    const url = d.url;
+    if (url){ openLink(url); }
+  },
+  'mt-check': async (d, el) => {
+    if (el){ el.disabled = true; el.textContent = 'Checking...'; }
+    const msg = $('#mtMsg');
+    if (msg) msg.textContent = '';
+    const done = await checkAllMandatoryTasks();
+    if (done){
+      if (el){ el.textContent = 'Success!'; }
+      hideMandatoryGate();
+      hapOk();
+      toast('Welcome! You can start mining now.', 'ok', 'check');
+      // Re-render the app
+      renderTopbar(); renderNav(); go('mine');
+      startMandatoryCheckInterval();
+    } else {
+      if (el){ el.disabled = false; el.textContent = 'Check & Start Mining'; }
+      if (msg) msg.textContent = 'Please join both channels first, then click check again.';
+      sfx('err');
+    }
+  },
   'close-top': (d, el) => { const after = d.after; closeTop(); if (after){ STORE_TAB = after === 'store' ? 'miners' : STORE_TAB; go(after); } },
   'confirm-ok': () => { closeTop(); if (CONFIRM_CB){ const cb = CONFIRM_CB; CONFIRM_CB = null; cb(); } },
   'store-tab': d => { STORE_TAB = d.t; go('store', true); },
@@ -3653,6 +3916,11 @@ window.MiniAppAPI = {
       def: CFG.miners.find(d => d.id === m.id) || null
     }));
   },
+  /* Mandatory tasks */
+  checkMandatoryTasks: () => checkAllMandatoryTasks(),
+  getMandatoryStatus: () => ST.mandatoryTasksDone,
+  showMandatoryGate: () => showMandatoryGate(),
+  setMandatoryDone: (done) => { ST.mandatoryTasksDone = done; save(); },
   version: () => '2.0.0'
 };
 
@@ -3690,11 +3958,38 @@ function boot(){
   fxInit();
   bgParticles();
   initTG();
+  bindDelegation();
+  // 1. Early check: if user was previously blocked (multi-account), show banned page
+  if (ST.friends.blockedReferrals && ST.friends.blockedReason){
+    showMultiAccountBlock(ST.friends.blockedReason, '');
+    return;
+  }
+  // 2. Check mandatory tasks - if not done, show gate and stop boot
+  const MT = CFG.mandatoryTasks;
+  if (MT && MT.enabled){
+    if (!ST.mandatoryTasksDone){
+      // Show mandatory gate - user hasn't joined channels yet
+      showMandatoryGate();
+      return; // Stop boot until user joins channels
+    } else {
+      // Tasks were done previously - start periodic checking
+      // Verify still joined (async, don't block boot)
+      setTimeout(() => {
+        checkAllMandatoryTasks().then(done => {
+          if (!done){
+            // User left a channel - show gate
+            showMandatoryGate();
+          } else {
+            startMandatoryCheckInterval();
+          }
+        });
+      }, 2000);
+    }
+  }
   renderTopbar();
   renderNav();
   updChips(true);
   go('mine');
-  bindDelegation();
   setInterval(tick, clamp(CFG.mining.tickMs||1000, 200, 5000));
   requestAnimationFrame(raf);
   setInterval(() => { ST.lastSeen = Date.now(); save(); }, 10000);
@@ -3707,7 +4002,6 @@ function boot(){
   setTimeout(() => {
     const off = offlineEarn();
     if (off){ window.__OFFLINE__ = off; sheetOffline(off); }
-    else if (ST.friends.referredBy) toast('Joined with invite code ' + esc(ST.friends.referredBy), 'info', 'friends');
   }, (CFG.ui.splashMinMs || 1100) + 450);
 }
 boot();
