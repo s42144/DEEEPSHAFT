@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DeepShaft Control Panel</title>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-app.js";
+import { getDatabase, ref, set, get, onValue, update, remove, child, push } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-database.js";
+const firebaseConfig = {
+  apiKey: "AIzaSyA2Ku-RIMgs37TLFO_aU6K88EQmUXpRrWI",
+  authDomain: "deep-shaft.firebaseapp.com",
+  databaseURL: "https://deep-shaft-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "deep-shaft",
+  storageBucket: "deep-shaft.firebasestorage.app",
+  messagingSenderId: "172565666879",
+  appId: "1:172565666879:web:8cca80ca07b2eef7846c8a",
+  measurementId: "G-DTKLJY64FG"
+};
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+window.FB = { db, ref, set, get, onValue, update, remove, child, push, ready: true };
+window.dispatchEvent(new Event('fb-ready'));
+</script>
+<style>
+:root{
+  --bg:#0b0f1a; --bg2:#0d1322; --card:#131c2e; --card2:#182338; --line:#223047;
+  --txt:#eaf0fb; --mut:#8b98ad;
+  --accent:#f5b942; --accent2:#22d3ee; --good:#34d399; --bad:#f87171; --gem:#e879f9;
+  --sidebar-w:240px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--txt);display:flex;min-height:100vh}
+.sidebar{width:var(--sidebar-w);background:var(--bg2);border-right:1px solid var(--line);position:fixed;height:100vh;overflow-y:auto;padding:16px 0;z-index:100}
+.sidebar .logo{padding:12px 20px 20px;border-bottom:1px solid var(--line);margin-bottom:12px}
+.sidebar .logo b{font-size:16px;font-weight:800;letter-spacing:.1em}
+.sidebar .logo span{font-size:10px;color:var(--mut);display:block;margin-top:2px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 20px;color:var(--mut);cursor:pointer;transition:all .15s;font-size:13px;font-weight:600;border-left:3px solid transparent}
+.nav-item:hover{background:rgba(255,255,255,.03);color:var(--txt)}
+.nav-item.on{color:var(--accent);border-left-color:var(--accent);background:rgba(245,185,66,.05)}
+.nav-item svg{width:18px;height:18px;flex:none}
+.main{margin-left:var(--sidebar-w);flex:1;padding:24px;min-width:0}
+.page{display:none}
+.page.on{display:block}
+.page h1{font-size:22px;font-weight:800;margin-bottom:20px}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;margin-bottom:24px}
+.stat-card{background:linear-gradient(165deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:14px;padding:18px}
+.stat-card .label{font-size:11px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.stat-card .value{font-size:28px;font-weight:800;margin-top:6px}
+.stat-card .sub{font-size:11px;color:var(--mut);margin-top:4px}
+.stat-card.gold .value{color:var(--accent)}
+.stat-card.cyan .value{color:var(--accent2)}
+.stat-card.green .value{color:var(--good)}
+.stat-card.red .value{color:var(--bad)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+.card h2{font-size:14px;font-weight:700;margin-bottom:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.08em}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:8px 12px;border-bottom:1px solid var(--line);color:var(--mut);font-weight:700;font-size:11px;text-transform:uppercase}
+td{padding:10px 12px;border-bottom:1px solid rgba(34,48,71,.3);vertical-align:middle}
+tr:hover{background:rgba(255,255,255,.02)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;transition:all .12s}
+.btn:active{transform:scale(.96)}
+.btn-go{background:var(--good);color:#042f1a}
+.btn-bad{background:var(--bad);color:#2b0606}
+.btn-cy{background:var(--accent2);color:#032530}
+.btn-ac{background:var(--accent);color:#241703}
+.btn-gh{background:var(--card2);color:var(--txt);border:1px solid var(--line)}
+.btn-sm{padding:5px 10px;font-size:11px}
+.inp{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;color:var(--txt);font-size:13px;outline:none}
+.inp:focus{border-color:var(--accent)}
+select.inp{cursor:pointer}
+.lbl{font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.between{justify-content:space-between}
+.grow{flex:1;min-width:0}
+.badge{font-size:10px;font-weight:800;padding:3px 8px;border-radius:99px;display:inline-block}
+.badge.go{background:rgba(52,211,153,.15);color:var(--good);border:1px solid rgba(52,211,153,.3)}
+.badge.rd{background:rgba(248,113,113,.15);color:var(--bad);border:1px solid rgba(248,113,113,.3)}
+.badge.cy{background:rgba(34,211,238,.15);color:var(--accent2);border:1px solid rgba(34,211,238,.3)}
+.badge.ac{background:rgba(245,185,66,.15);color:var(--accent);border:1px solid rgba(245,185,66,.3)}
+.search-bar{margin-bottom:16px}
+.empty{text-align:center;padding:40px;color:var(--mut);font-size:14px}
+.user-row td:first-child{font-weight:700}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:none;align-items:center;justify-content:center}
+.modal-bg.on{display:flex}
+.modal{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px;width:90%;max-width:500px;max-height:85vh;overflow-y:auto}
+.modal h3{font-size:16px;font-weight:800;margin-bottom:16px}
+.modal .field{margin-bottom:12px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--line);padding:12px 20px;border-radius:10px;font-size:13px;z-index:300;animation:fadeup .3s}
+@keyframes fadeup{from{opacity:0;transform:translate(-50%,10px)}}
+.toggle{width:44px;height:24px;border-radius:99px;background:var(--line);position:relative;cursor:pointer;transition:.2s;border:none}
+.toggle.on{background:var(--good)}
+.toggle:after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.2s}
+.toggle.on:after{left:22px}
+.img-prev{width:48px;height:48px;border-radius:10px;object-fit:cover;border:1px solid var(--line)}
+@media(max-width:768px){.sidebar{width:60px}.nav-item span,.sidebar .logo span{display:none}.main{margin-left:60px;padding:16px}}
+</style>
+</head>
+<body>
+<div class="sidebar">
+  <div class="logo"><b>DEEPSHAFT</b><span>Control Panel</span></div>
+  <div class="nav-item on" data-page="dashboard">📊 <span>Dashboard</span></div>
+  <div class="nav-item" data-page="users">👥 <span>Users</span></div>
+  <div class="nav-item" data-page="banned">🚫 <span>Banned</span></div>
+  <div class="nav-item" data-page="tasks">✅ <span>Tasks</span></div>
+  <div class="nav-item" data-page="miners">⛏️ <span>Miners</span></div>
+  <div class="nav-item" data-page="payments">💳 <span>Payments</span></div>
+  <div class="nav-item" data-page="withdrawals">📤 <span>Withdrawals</span></div>
+  <div class="nav-item" data-page="broadcast">📢 <span>Broadcast</span></div>
+  <div class="nav-item" data-page="referrals">🔗 <span>Referrals</span></div>
+  <div class="nav-item" data-page="config">⚙️ <span>Config</span></div>
+</div>
+<div class="main">
+
+<!-- DASHBOARD -->
+<div class="page on" id="page-dashboard">
+  <h1>Dashboard</h1>
+  <div class="stats-grid" id="dashStats"></div>
+  <div class="card"><h2>Recent Activity</h2><div id="recentActivity"></div></div>
+  <div class="card"><h2>Online Now</h2><div id="onlineUsers"></div></div>
+</div>
+
+<!-- USERS -->
+<div class="page" id="page-users">
+  <h1>Users</h1>
+  <div class="search-bar"><input class="inp" id="userSearch" placeholder="Search by name, username, or Telegram ID..." oninput="renderUsers()"></div>
+  <div class="card"><h2>All Users <span style="float:right" id="userCount"></span></h2>
+    <div style="overflow-x:auto"><table><thead><tr><th>User</th><th>TG ID</th><th>Level</th><th>Balance</th><th>Purchased</th><th>Status</th><th>Actions</th></tr></thead><tbody id="usersTable"></tbody></table></div>
+  </div>
+</div>
+
+<!-- BANNED -->
+<div class="page" id="page-banned">
+  <h1>Banned Users</h1>
+  <div class="card"><h2>Banned / Multi-Account Users</h2>
+    <div style="overflow-x:auto"><table><thead><tr><th>TG ID</th><th>Name</th><th>Reason</th><th>Device ID</th><th>Date</th><th>Actions</th></tr></thead><tbody id="bannedTable"></tbody></table></div>
+  </div>
+</div>
+
+<!-- TASKS -->
+<div class="page" id="page-tasks">
+  <h1>Tasks Management</h1>
+  <div class="card">
+    <h2>Add New Task</h2>
+    <div class="field"><label class="lbl">Title</label><input class="inp" id="taskTitle" placeholder="Join our channel"></div>
+    <div class="field"><label class="lbl">Description</label><input class="inp" id="taskDesc" placeholder="Get latest updates"></div>
+    <div class="field"><label class="lbl">URL / Link</label><input class="inp" id="taskUrl" placeholder="https://t.me/channel"></div>
+    <div class="field"><label class="lbl">Logo / Photo URL</label><input class="inp" id="taskLogo" placeholder="https://..." oninput="prevImg(this,'taskImgPrev')"></div>
+    <div class="row"><img id="taskImgPrev" class="img-prev" style="display:none"><div></div></div>
+    <div class="row"><div class="grow"><label class="lbl">Reward ORE</label><input class="inp" id="taskOre" type="number" value="200"></div>
+    <div class="grow"><label class="lbl">Reward GEM</label><input class="inp" id="taskGem" type="number" value="0"></div></div>
+    <div class="field"><label class="lbl">Type</label><select class="inp" id="taskType"><option value="channel">Channel</option><option value="social">Social</option><option value="site">Website</option><option value="link">Link</option></select></div>
+    <button class="btn btn-ac" onclick="addTask()">Add Task</button>
+  </div>
+  <div class="card"><h2>Current Tasks</h2><div id="tasksList"></div></div>
+</div>
+
+<!-- MINERS -->
+<div class="page" id="page-miners">
+  <h1>Miners Management</h1>
+  <div class="card"><h2>All Miners</h2><div id="minersList"></div></div>
+</div>
+
+<!-- PAYMENTS -->
+<div class="page" id="page-payments">
+  <h1>Payments & Deposits</h1>
+  <div class="stats-grid" id="payStats"></div>
+  <div class="card"><h2>Payment History</h2><div style="overflow-x:auto"><table><thead><tr><th>User</th><th>Item</th><th>Method</th><th>Amount TON</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead><tbody id="payTable"></tbody></table></div></div>
+</div>
+
+<!-- WITHDRAWALS -->
+<div class="page" id="page-withdrawals">
+  <h1>Withdrawals</h1>
+  <div class="stats-grid" id="wdStats"></div>
+  <div class="card"><h2>Withdrawal Requests</h2><div style="overflow-x:auto"><table><thead><tr><th>User</th><th>Amount ORE</th><th>Amount TON</th><th>Address</th><th>Status</th><th>Date</th><th>Actions</th></tr></thead><tbody id="wdTable"></tbody></table></div></div>
+  <div class="card"><h2>Auto Withdrawal (TON Connect)</h2>
+    <p style="color:var(--mut);font-size:12px;margin-bottom:12px">Connect a wallet to send TON payments automatically to users.</p>
+    <button class="btn btn-cy" onclick="connectTonWallet()">Connect Wallet</button>
+    <span id="walletAddr" style="margin-left:12px;font-size:12px;color:var(--mut)"></span>
+  </div>
+</div>
+
+<!-- BROADCAST -->
+<div class="page" id="page-broadcast">
+  <h1>Broadcast Message</h1>
+  <div class="card">
+    <h2>Send to All Users</h2>
+    <div class="field"><label class="lbl">Message Title</label><input class="inp" id="bcTitle" placeholder="Important Update"></div>
+    <div class="field"><label class="lbl">Message Body</label><textarea class="inp" id="bcMsg" rows="4" placeholder="Type your message..." style="resize:vertical"></textarea></div>
+    <div class="field"><label class="lbl">Bot API Key</label><input class="inp" id="bcBotKey" value="8996546322:AAG-rM99q3Dcx4QPgx-9-r0zdk9kKLfjufA"></div>
+    <button class="btn btn-ac" onclick="broadcastMessage()">Send Broadcast</button>
+    <div id="bcResult" style="margin-top:12px;font-size:12px"></div>
+  </div>
+  <div class="card"><h2>Notify Mini App Users</h2>
+    <p style="color:var(--mut);font-size:12px;margin-bottom:12px">Send an in-app notification to all currently active mini app sessions.</p>
+    <button class="btn btn-cy" onclick="notifyApp()">Send In-App Notification</button>
+  </div>
+</div>
+
+<!-- REFERRALS -->
+<div class="page" id="page-referrals">
+  <h1>Referrals</h1>
+  <div class="stats-grid" id="refStats"></div>
+  <div class="card"><h2>Top Referrers</h2><div style="overflow-x:auto"><table><thead><tr><th>User</th><th>TG ID</th><th>Invited</th><th>Earned</th></tr></thead><tbody id="refTable"></tbody></table></div></div>
+</div>
+
+<!-- CONFIG -->
+<div class="page" id="page-config">
+  <h1>Configuration</h1>
+  <div class="card"><h2>App Settings</h2>
+    <div class="field"><label class="lbl">App Name</label><input class="inp" id="cfgAppName"></div>
+    <div class="field"><label class="lbl">Tagline</label><input class="inp" id="cfgTagline"></div>
+    <div class="field"><label class="lbl">Support URL</label><input class="inp" id="cfgSupportUrl"></div>
+    <div class="field"><label class="lbl">Bot Username</label><input class="inp" id="cfgBotUser"></div>
+  </div>
+  <div class="card"><h2>Payment Settings</h2>
+    <div class="field"><label class="lbl">Wallet Address (TON)</label><input class="inp" id="cfgWallet"></div>
+    <div class="field"><label class="lbl">TON Connect Manifest URL</label><input class="inp" id="cfgManifest"></div>
+  </div>
+  <div class="card"><h2>Economy Settings</h2>
+    <div class="row"><div class="grow"><label class="lbl">ORE per TON</label><input class="inp" id="cfgOrePerTon" type="number"></div>
+    <div class="grow"><label class="lbl">XP per ORE</label><input class="inp" id="cfgXpPerOre" type="number" step="0.01"></div></div>
+    <div class="row"><div class="grow"><label class="lbl">Withdraw Min ORE</label><input class="inp" id="cfgWdMin" type="number"></div>
+    <div class="grow"><label class="lbl">Withdraw Fee %</label><input class="inp" id="cfgWdFee" type="number"></div></div>
+  </div>
+  <div class="card"><h2>Earnings System</h2>
+    <div class="row"><div class="grow"><label class="lbl">Daily Gram Reward (TON)</label><input class="inp" id="cfgGram" type="number" step="0.001"></div>
+    <div class="grow"><label class="lbl">Purchase Boost %</label><input class="inp" id="cfgBoost" type="number"></div>
+    <div class="grow"><label class="lbl">Boost Days</label><input class="inp" id="cfgBoostDays" type="number"></div></div>
+    <div class="row" style="margin-top:8px"><label class="lbl">TON Only Purchases</label><button class="toggle on" id="cfgTonOnly" onclick="this.classList.toggle('on')"></button></div>
+  </div>
+  <div class="card"><h2>Swap Settings</h2>
+    <div class="row"><div class="grow"><label class="lbl">ORE→GEM Rate</label><input class="inp" id="cfgO2G" type="number"></div>
+    <div class="grow"><label class="lbl">GEM→ORE Rate</label><input class="inp" id="cfgG2O" type="number"></div>
+    <div class="grow"><label class="lbl">Swap Fee %</label><input class="inp" id="cfgSwapFee" type="number"></div></div>
+  </div>
+  <div class="card"><h2>Mandatory Tasks</h2>
+    <div class="row" style="margin-bottom:8px"><label class="lbl">Enabled</label><button class="toggle on" id="cfgMtEnabled" onclick="this.classList.toggle('on')"></button></div>
+    <div class="field"><label class="lbl">Bot API Key</label><input class="inp" id="cfgMtBotKey"></div>
+    <div class="field"><label class="lbl">Check Interval (seconds)</label><input class="inp" id="cfgMtInterval" type="number"></div>
+    <div id="mtChannels"></div>
+    <button class="btn btn-gh btn-sm" onclick="addMtChannel()" style="margin-top:8px">+ Add Channel</button>
+  </div>
+  <button class="btn btn-ac" onclick="saveConfig()" style="margin-top:16px">Save All Config</button>
+</div>
+
+</div>
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<script>
+'use strict';
+/* ====================== CONTROL PANEL LOGIC ====================== */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function fmt(n){n=Number(n)||0;if(Math.abs(n)<1000)return (Math.round(n*10)/10).toString();const u=['K','M','B','T','Qa'];let i=-1;while(Math.abs(n)>=1000&&i<u.length-1){n/=1000;i++;}return(Math.abs(n)>=100?Math.round(n):Math.round(n*100)/100)+u[i];}
+function fmtTon(n){return (Math.round((Number(n)||0)*1000)/1000).toString();}
+function shortAddr(a){a=a||'';return a.length>14?a.slice(0,6)+'...'+a.slice(-4):a;}
+function timeAgo(ts){if(!ts)return '-';const d=Date.now()-ts;const m=Math.floor(d/60000),h=Math.floor(d/3600000),dd=Math.floor(d/86400000);if(dd>0)return dd+'d ago';if(h>0)return h+'h ago';if(m>0)return m+'m ago';return 'just now';}
+
+let USERS_CACHE = {}, BANNED_CACHE = {}, CONFIG_CACHE = null;
+let BC = null; try{BC = new BroadcastChannel('cp_channel');}catch(e){}
+
+/* ----- Navigation ----- */
+$$('.nav-item').forEach(item => {
+  item.onclick = () => {
+    $$('.nav-item').forEach(i => i.classList.remove('on'));
+    item.classList.add('on');
+    $$('.page').forEach(p => p.classList.remove('on'));
+    $('#page-' + item.dataset.page).classList.add('on');
+    refreshPage(item.dataset.page);
+  };
+});
+
+function refreshPage(page){
+  if(page==='dashboard') loadDashboard();
+  else if(page==='users') loadUsers();
+  else if(page==='banned') loadBanned();
+  else if(page==='tasks') loadTasks();
+  else if(page==='miners') loadMiners();
+  else if(page==='payments') loadPayments();
+  else if(page==='withdrawals') loadWithdrawals();
+  else if(page==='referrals') loadReferrals();
+  else if(page==='config') loadConfig();
+}
+
+/* ----- Toast ----- */
+function toast(msg){
+  const t = document.createElement('div');
+  t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 3000);
+}
+
+/* ----- Modal ----- */
+function showModal(html){ $('#modalContent').innerHTML = html; $('#modalBg').classList.add('on'); }
+function closeModal(){ $('#modalBg').classList.remove('on'); }
+
+/* ----- Config helpers ----- */
+function getCpConfig(){ try{ return JSON.parse(localStorage.getItem('cp_config') || '{}'); }catch(e){ return {}; } }
+function setCpConfig(obj){ localStorage.setItem('cp_config', JSON.stringify(obj)); if(BC) BC.postMessage('config'); }
+function deepMerge(a,b){ if(!b)return a; if(Array.isArray(b))return b; if(typeof b==='object'&&typeof a==='object'&&a){const o={...a};for(const k in b)o[k]=deepMerge(a[k],b[k]);return o;}return b;}
+
+/* ----- Firebase helpers ----- */
+function fbReady(){ return window.FB && window.FB.ready; }
+async function fbGet(path){ if(!fbReady())return null; try{ const s=await window.FB.get(window.FB.ref(window.FB.db,path)); return s.exists()?s.val():null; }catch(e){return null;} }
+async function fbSet(path,val){ if(!fbReady())return; try{ await window.FB.set(window.FB.ref(window.FB.db,path),val); }catch(e){} }
+async function fbDel(path){ if(!fbReady())return; try{ await window.FB.remove(window.FB.ref(window.FB.db,path)); }catch(e){} }
+function fbOn(path,cb){ if(!fbReady())return; try{ window.FB.onValue(window.FB.ref(window.FB.db,path),s=>cb(s.exists()?s.val():null)); }catch(e){} }
+
+/* ====================== DASHBOARD ====================== */
+function loadDashboard(){
+  if(!fbReady()){ setTimeout(loadDashboard,500); return; }
+  // Listen to users node
+  fbOn('users', users => {
+    USERS_CACHE = users || {};
+    const userIds = Object.keys(USERS_CACHE);
+    const now = Date.now();
+    const dayAgo = now - 86400000, monthAgo = now - 30*86400000;
+    let totalUsers = userIds.length, dailyUsers = 0, monthlyUsers = 0, purchasers = 0, onlineNow = 0;
+    let totalOre = 0, totalTonPurchased = 0;
+    const activity = [];
+    userIds.forEach(id => {
+      const u = USERS_CACHE[id]; if(!u) return;
+      const lastSeen = u.lastSeen || (u.state&&u.state.lastSeen) || 0;
+      const createdAt = (u.state&&u.state.createdAt) || 0;
+      if(lastSeen > dayAgo) dailyUsers++;
+      if(createdAt > monthAgo) monthlyUsers++;
+      if(u.profile && u.profile.level > 0 || (u.state&&u.state.stats&&u.state.stats.buys>0)) purchasers++;
+      if(lastSeen > now - 60000) onlineNow++;
+      totalOre += (u.state&&u.state.ore) || 0;
+      totalTonPurchased += (u.state&&u.state.earnings&&u.state.earnings.totalPurchased) || 0;
+    });
+    $('#dashStats').innerHTML = [
+      statCard('Total Users', totalUsers, 'All registered', 'cyan'),
+      statCard('Daily Active', dailyUsers, 'Last 24h', 'green'),
+      statCard('New This Month', monthlyUsers, 'Last 30 days', 'gold'),
+      statCard('Total Purchasers', purchasers, 'Made purchases', 'gold'),
+      statCard('Online Now', onlineNow, 'Active right now', 'green'),
+      statCard('Total ORE', fmt(totalOre), 'Across all users', 'cyan'),
+      statCard('Total TON Volume', fmtTon(totalTonPurchased) + ' TON', 'Lifetime purchases', 'gold'),
+    ].join('');
+    // Online users
+    const online = userIds.filter(id => { const u=USERS_CACHE[id]; return (u.lastSeen||(u.state&&u.state.lastSeen)||0) > now-60000; });
+    $('#onlineUsers').innerHTML = online.length ? online.slice(0,20).map(id => {
+      const u = USERS_CACHE[id]; const p = u.profile||{};
+      return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(34,48,71,.2)">' +
+        (p.photo?'<img src="'+esc(p.photo)+'" style="width:28px;height:28px;border-radius:50%">':'<div style="width:28px;height:28px;border-radius:50%;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:11px">'+esc((p.name||'U').slice(0,1))+'</div>') +
+        '<span>'+esc(p.name||id)+' <span style="color:var(--mut);font-size:11px">'+id.replace('tg_','')+'</span></span></div>';
+    }).join('') : '<div class="empty">No users online</div>';
+    // Recent activity
+    const events = JSON.parse(localStorage.getItem('cp_events') || '[]').slice(0, 15);
+    $('#recentActivity').innerHTML = events.length ? events.map(e => 
+      '<div style="padding:4px 0;border-bottom:1px solid rgba(34,48,71,.2);font-size:12px"><b>'+esc(e.type)+'</b> - '+esc(e.userName||e.userId||'')+' - '+timeAgo(e.ts)+'</div>'
+    ).join('') : '<div class="empty">No recent activity</div>';
+  });
+  // Banned users
+  fbOn('bannedUsers', banned => {
+    BANNED_CACHE = banned || {};
+  });
+}
+
+function statCard(label, value, sub, color){
+  return '<div class="stat-card '+color+'"><div class="label">'+label+'</div><div class="value">'+value+'</div><div class="sub">'+sub+'</div></div>';
+}
+
+/* ====================== USERS ====================== */
+function loadUsers(){
+  if(!fbReady()){ setTimeout(loadUsers,500); return; }
+  fbOn('users', users => { USERS_CACHE = users||{}; renderUsers(); });
+}
+function renderUsers(){
+  const q = ($('#userSearch').value || '').toLowerCase();
+  const ids = Object.keys(USERS_CACHE).filter(id => {
+    if(!q) return true;
+    const u = USERS_CACHE[id]; const p = u.profile||{}; const s = u.state||{};
+    return (p.name||'').toLowerCase().includes(q) || (p.username||'').toLowerCase().includes(q) || id.toLowerCase().includes(q);
+  });
+  $('#userCount').textContent = '(' + ids.length + ')';
+  if(!ids.length){ $('#usersTable').innerHTML = '<tr><td colspan="7" class="empty">No users found</td></tr>'; return; }
+  $('#usersTable').innerHTML = ids.slice(0, 100).map(id => {
+    const u = USERS_CACHE[id]; const p = u.profile||{}; const s = u.state||{};
+    const banned = u.banned === true;
+    const tgId = id.replace('tg_','');
+    return '<tr><td>'+(p.photo?'<img src="'+esc(p.photo)+'" style="width:24px;height:24px;border-radius:50%;vertical-align:middle"> ':'')+'<b>'+esc(p.name||id)+'</b></td>'+
+      '<td>'+esc(tgId)+'</td>'+
+      '<td>L'+(s.level||1)+'</td>'+
+      '<td>'+fmt(s.ore||0)+' ORE</td>'+
+      '<td>'+fmtTon((s.earnings&&s.earnings.totalPurchased)||0)+' TON</td>'+
+      '<td>'+(banned?'<span class="badge rd">Banned</span>':'<span class="badge go">Active</span>')+'</td>'+
+      '<td><button class="btn btn-cy btn-sm" onclick="editUser(\''+id+'\')">Edit</button> '+(banned?'<button class="btn btn-go btn-sm" onclick="unbanUser('+tgId+')">Unban</button>':'<button class="btn btn-bad btn-sm" onclick="banUser('+tgId+')">Ban</button>')+'</td></tr>';
+  }).join('');
+}
+function editUser(fbId){
+  const u = USERS_CACHE[fbId]; if(!u) return;
+  const p = u.profile||{}; const s = u.state||{};
+  showModal('<h3>Edit User</h3>'+
+    '<div class="field"><label class="lbl">Name</label><input class="inp" id="euName" value="'+esc(p.name||'')+'"></div>'+
+    '<div class="field"><label class="lbl">Username</label><input class="inp" id="euUser" value="'+esc(p.username||'')+'"></div>'+
+    '<div class="field"><label class="lbl">ORE Balance</label><input class="inp" id="euOre" type="number" value="'+(s.ore||0)+'"></div>'+
+    '<div class="field"><label class="lbl">GEM Balance</label><input class="inp" id="euGem" type="number" value="'+(s.gems||0)+'"></div>'+
+    '<div class="field"><label class="lbl">Level</label><input class="inp" id="euLvl" type="number" value="'+(s.level||1)+'"></div>'+
+    '<div class="field"><label class="lbl">XP</label><input class="inp" id="euXp" type="number" value="'+(s.xp||0)+'"></div>'+
+    '<div class="row" style="margin-top:12px"><button class="btn btn-ac" onclick="saveUserEdit(\''+fbId+'\')">Save</button> <button class="btn btn-gh" onclick="closeModal()">Cancel</button></div>'+
+    '<div style="margin-top:16px"><button class="btn btn-cy btn-sm" onclick="grantUser(\''+fbId+'\')">Grant ORE/GEM</button> <button class="btn btn-bad btn-sm" onclick="resetUserState(\''+fbId+'\')">Reset State</button></div>');
+}
+function saveUserEdit(fbId){
+  const u = USERS_CACHE[fbId]; if(!u) return;
+  u.profile = u.profile||{}; u.state = u.state||{};
+  u.profile.name = $('#euName').value; u.profile.username = $('#euUser').value;
+  u.state.ore = Number($('#euOre').value)||0; u.state.gems = Number($('#euGem').value)||0;
+  u.state.level = Number($('#euLvl').value)||1; u.state.xp = Number($('#euXp').value)||0;
+  u.state.savedAt = Date.now(); u.profile.level = u.state.level; u.profile.ore = u.state.ore;
+  fbSet('users/'+fbId+'/profile', u.profile); fbSet('users/'+fbId+'/state', u.state);
+  toast('User updated'); closeModal();
+}
+function grantUser(fbId){
+  showModal('<h3>Grant Balance</h3>'+
+    '<div class="field"><label class="lbl">ORE to add</label><input class="inp" id="grOre" type="number" value="1000"></div>'+
+    '<div class="field"><label class="lbl">GEM to add</label><input class="inp" id="grGem" type="number" value="0"></div>'+
+    '<div class="field"><label class="lbl">XP to add</label><input class="inp" id="grXp" type="number" value="0"></div>'+
+    '<div class="row" style="margin-top:12px"><button class="btn btn-ac" onclick="doGrant(\''+fbId+'\')">Grant</button> <button class="btn btn-gh" onclick="closeModal()">Cancel</button></div>');
+}
+async function doGrant(fbId){
+  const u = USERS_CACHE[fbId]; if(!u) return; u.state = u.state||{};
+  u.state.ore = (u.state.ore||0) + (Number($('#grOre').value)||0);
+  u.state.gems = (u.state.gems||0) + (Number($('#grGem').value)||0);
+  u.state.xp = (u.state.xp||0) + (Number($('#grXp').value)||0);
+  u.state.savedAt = Date.now();
+  await fbSet('users/'+fbId+'/state', u.state);
+  toast('Granted to user'); closeModal();
+}
+async function resetUserState(fbId){
+  if(!confirm("Reset this user's state? This cannot be undone.")) return;
+  await fbDel('users/'+fbId+'/state');
+  toast('User state reset'); closeModal();
+}
+async function banUser(tgId){
+  const reason = prompt('Ban reason:', 'banned_by_admin'); if(!reason) return;
+  await fbSet('users/tg_'+tgId+'/banned', true);
+  await fbSet('bannedUsers/tg_'+tgId, { reason, bannedAt: Date.now(), tgUserId: tgId });
+  toast('User banned'); loadBanned();
+}
+async function unbanUser(tgId){
+  await fbSet('users/tg_'+tgId+'/banned', false);
+  await fbDel('bannedUsers/tg_'+tgId);
+  toast('User unbanned'); loadBanned();
+}
+
+/* ====================== BANNED ====================== */
+function loadBanned(){
+  if(!fbReady()){ setTimeout(loadBanned,500); return; }
+  fbOn('bannedUsers', banned => {
+    BANNED_CACHE = banned||{};
+    const ids = Object.keys(BANNED_CACHE);
+    if(!ids.length){ $('#bannedTable').innerHTML = '<tr><td colspan="6" class="empty">No banned users</td></tr>'; return; }
+    $('#bannedTable').innerHTML = ids.map(id => {
+      const b = BANNED_CACHE[id]; const tgId = id.replace('tg_','');
+      return '<tr><td>'+esc(tgId)+'</td><td>'+esc(b.userName||'-')+'</td><td><span class="badge rd">'+esc(b.reason||'unknown')+'</span></td>'+
+        '<td style="font-size:10px">'+esc((b.deviceId||'').slice(0,20))+'</td><td>'+timeAgo(b.detectedAt||b.bannedAt)+'</td>'+
+        '<td><button class="btn btn-go btn-sm" onclick="unbanUser('+tgId+')">Unban</button></td></tr>';
+    }).join('');
+  });
+}
+
+/* ====================== TASKS ====================== */
+function loadTasks(){
+  const cfg = getCpConfig();
+  const tasks = cfg.tasks || [];
+  if(!tasks.length){ $('#tasksList').innerHTML = '<div class="empty">No tasks yet. Add one above.</div>'; return; }
+  $('#tasksList').innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>Logo</th><th>Title</th><th>Desc</th><th>URL</th><th>Reward</th><th>Actions</th></tr></thead><tbody>' +
+    tasks.map(t => '<tr><td>'+(t.logo?'<img src="'+esc(t.logo)+'" style="width:32px;height:32px;border-radius:8px">':'-')+'</td>'+
+    '<td>'+esc(t.title||'')+'</td><td>'+esc(t.desc||'')+'</td><td style="font-size:10px">'+esc(t.url||'')+'</td>'+
+    '<td>'+(t.rewardOre?fmt(t.rewardOre)+' ORE ':'')+(t.rewardGem?t.rewardGem+' GEM':'')+'</td>'+
+    '<td><button class="btn btn-bad btn-sm" onclick="removeTask(\''+esc(t.id)+'\')">Remove</button></td></tr>').join('') +
+    '</tbody></table></div>';
+}
+function addTask(){
+  const title = $('#taskTitle').value.trim(); if(!title){ toast('Title required'); return; }
+  const task = {
+    id: 't_' + Date.now().toString(36),
+    type: $('#taskType').value,
+    title, desc: $('#taskDesc').value.trim(),
+    url: $('#taskUrl').value.trim(), logo: $('#taskLogo').value.trim(),
+    rewardOre: Number($('#taskOre').value)||0, rewardGem: Number($('#taskGem').value)||0,
+    enabled: true
+  };
+  const cfg = getCpConfig();
+  cfg.tasks = (cfg.tasks || []).concat([task]);
+  setCpConfig(cfg);
+  toast('Task added'); loadTasks();
+  $('#taskTitle').value = ''; $('#taskDesc').value = ''; $('#taskUrl').value = ''; $('#taskLogo').value = '';
+}
+function removeTask(id){
+  const cfg = getCpConfig();
+  cfg.tasks = (cfg.tasks || []).filter(t => t.id !== id);
+  setCpConfig(cfg);
+  toast('Task removed'); loadTasks();
+}
+function prevImg(inp, prevId){
+  const url = inp.value.trim(); const el = $('#'+prevId);
+  if(url){ el.src = url; el.style.display = 'block'; } else { el.style.display = 'none'; }
+}
+
+/* ====================== MINERS ====================== */
+function loadMiners(){
+  const cfg = getCpConfig();
+  const miners = cfg.miners || [];
+  if(!miners.length){ $('#minersList').innerHTML = '<div class="empty">No miners configured</div>'; return; }
+  $('#minersList').innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>ID</th><th>Name</th><th>Rarity</th><th>Power</th><th>Price TON</th><th>Discount</th><th>Enabled</th><th>Actions</th></tr></thead><tbody>' +
+    miners.slice(0, 100).map(m => '<tr><td style="font-size:10px">'+esc(m.id)+'</td><td>'+esc(m.name)+'</td><td>'+esc(m.rarity)+'</td>'+
+    '<td>'+m.power+'</td><td>'+fmtTon(m.costTon||0)+'</td><td>'+(m.discount||0)+'%</td>'+
+    '<td>'+(m.enabled!==false?'<span class="badge go">Yes</span>':'<span class="badge rd">No</span>')+'</td>'+
+    '<td><button class="btn btn-cy btn-sm" onclick="editMiner(\''+esc(m.id)+'\')">Edit</button> '+(m.enabled!==false?'<button class="btn btn-bad btn-sm" onclick="toggleMiner(\''+esc(m.id)+'\',false)">Disable</button>':'<button class="btn btn-go btn-sm" onclick="toggleMiner(\''+esc(m.id)+'\',true)">Enable</button>')+'</td></tr>').join('') +
+    '</tbody></table></div>';
+}
+function editMiner(id){
+  const cfg = getCpConfig(); const m = (cfg.miners||[]).find(x=>x.id===id); if(!m) return;
+  showModal('<h3>Edit Miner: '+esc(m.name)+'</h3>'+
+    '<div class="field"><label class="lbl">Name</label><input class="inp" id="mName" value="'+esc(m.name)+'"></div>'+
+    '<div class="field"><label class="lbl">Miner ID</label><input class="inp" id="mId" value="'+esc(m.id)+'"></div>'+
+    '<div class="field"><label class="lbl">Power</label><input class="inp" id="mPower" type="number" step="0.1" value="'+m.power+'"></div>'+
+    '<div class="field"><label class="lbl">Price TON</label><input class="inp" id="mPrice" type="number" step="0.01" value="'+(m.costTon||0)+'"></div>'+
+    '<div class="field"><label class="lbl">Discount %</label><input class="inp" id="mDisc" type="number" value="'+(m.discount||0)+'"></div>'+
+    '<div class="row" style="margin-top:12px"><button class="btn btn-ac" onclick="saveMinerEdit(\''+esc(id)+'\')">Save</button> <button class="btn btn-gh" onclick="closeModal()">Cancel</button></div>');
+}
+function saveMinerEdit(oldId){
+  const cfg = getCpConfig(); const m = (cfg.miners||[]).find(x=>x.id===oldId); if(!m) return;
+  m.name = $('#mName').value; m.id = $('#mId').value; m.power = Number($('#mPower').value)||0;
+  m.costTon = Number($('#mPrice').value)||0; m.discount = Number($('#mDisc').value)||0;
+  setCpConfig(cfg); toast('Miner updated'); closeModal(); loadMiners();
+}
+function toggleMiner(id, enabled){
+  const cfg = getCpConfig(); const m = (cfg.miners||[]).find(x=>x.id===id); if(!m) return;
+  m.enabled = enabled; setCpConfig(cfg); toast(enabled?'Miner enabled':'Miner disabled'); loadMiners();
+}
+
+/* ====================== PAYMENTS ====================== */
+function loadPayments(){
+  const pays = JSON.parse(localStorage.getItem('cp_payments') || '[]');
+  const total = pays.length, pending = pays.filter(p=>p.status==='pending').length, paid = pays.filter(p=>p.status==='paid').length;
+  const totalTon = pays.reduce((s,p)=>s+(Number(p.amountTon)||0),0);
+  $('#payStats').innerHTML = statCard('Total Payments', total, '', 'cyan') + statCard('Pending', pending, '', 'gold') + statCard('Paid', paid, '', 'green') + statCard('Total TON', fmtTon(totalTon), '', 'gold');
+  if(!pays.length){ $('#payTable').innerHTML = '<tr><td colspan="7" class="empty">No payments</td></tr>'; return; }
+  $('#payTable').innerHTML = pays.slice(0, 50).map(p => '<tr><td>'+esc(p.userName||p.userId||'-')+'</td><td>'+esc(p.item||'-')+'</td><td>'+esc(p.method)+'</td><td>'+fmtTon(p.amountTon)+'</td>'+
+    '<td>'+(p.status==='paid'?'<span class="badge go">Paid</span>':'<span class="badge ac">Pending</span>')+'</td><td>'+timeAgo(p.ts)+'</td>'+
+    '<td>'+(p.status==='pending'?'<button class="btn btn-go btn-sm" onclick="markPaid('+JSON.stringify(p.id).replace(/"/g,'&quot;')+')">Mark Paid</button>':'')+'</td></tr>').join('');
+}
+function markPaid(id){
+  const pays = JSON.parse(localStorage.getItem('cp_payments') || '[]');
+  const p = pays.find(x=>x.id===id); if(p) p.status = 'paid';
+  localStorage.setItem('cp_payments', JSON.stringify(pays));
+  toast('Marked as paid'); loadPayments();
+}
+
+/* ====================== WITHDRAWALS ====================== */
+function loadWithdrawals(){
+  const wds = JSON.parse(localStorage.getItem('cp_withdrawals') || '[]');
+  const total = wds.length, pending = wds.filter(w=>w.status==='pending').length;
+  const totalTon = wds.reduce((s,w)=>s+(Number(w.amountTon)||0),0);
+  $('#wdStats').innerHTML = statCard('Total Requests', total, '', 'cyan') + statCard('Pending', pending, '', 'gold') + statCard('Total TON', fmtTon(totalTon), '', 'gold');
+  if(!wds.length){ $('#wdTable').innerHTML = '<tr><td colspan="7" class="empty">No withdrawals</td></tr>'; return; }
+  $('#wdTable').innerHTML = wds.slice(0, 50).map(w => '<tr><td>'+esc(w.userName||w.userId||'-')+'</td><td>'+fmt(w.amountOre)+'</td><td>'+fmtTon(w.amountTon)+'</td>'+
+    '<td style="font-size:10px">'+esc(shortAddr(w.address))+'</td>'+
+    '<td>'+(w.status==='paid'?'<span class="badge go">Paid</span>':w.status==='rejected'?'<span class="badge rd">Rejected</span>':'<span class="badge ac">Pending</span>')+'</td><td>'+timeAgo(w.ts)+'</td>'+
+    '<td>'+(w.status==='pending'?'<button class="btn btn-go btn-sm" onclick="markWdPaid('+JSON.stringify(w.id).replace(/"/g,'&quot;')+')">Approve</button> <button class="btn btn-bad btn-sm" onclick="markWdReject('+JSON.stringify(w.id).replace(/"/g,'&quot;')+')">Reject</button>':'')+'</td></tr>').join('');
+}
+function markWdPaid(id){
+  const wds = JSON.parse(localStorage.getItem('cp_withdrawals') || '[]');
+  const w = wds.find(x=>x.id===id); if(w) w.status = 'paid';
+  localStorage.setItem('cp_withdrawals', JSON.stringify(wds));
+  toast('Withdrawal approved'); loadWithdrawals();
+}
+function markWdReject(id){
+  const wds = JSON.parse(localStorage.getItem('cp_withdrawals') || '[]');
+  const w = wds.find(x=>x.id===id); if(w) w.status = 'rejected';
+  localStorage.setItem('cp_withdrawals', JSON.stringify(wds));
+  toast('Withdrawal rejected'); loadWithdrawals();
+}
+/* Auto withdrawal via TON Connect */
+let TCUI = null, TC_WALLET = null;
+async function connectTonWallet(){
+  try{
+    if(!window.TON_CONNECT_UI && !window.TonConnectUI){
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/@tonconnect/ui@2/dist/tonconnect-ui.min.js';
+      s.onload = async () => {
+        const SDK = window.TON_CONNECT_UI || window.TonConnectUI;
+        TCUI = new SDK.TonConnectUI({ manifestUrl: 'https://deepshaft-flame.vercel.app/tonconnect-manifest.json' });
+        TCUI.onStatusChange(w => { TC_WALLET = w; updateWalletDisplay(); });
+        await TCUI.openModal();
+      };
+      document.head.appendChild(s);
+    } else {
+      const SDK = window.TON_CONNECT_UI || window.TonConnectUI;
+      if(!TCUI) TCUI = new SDK.TonConnectUI({ manifestUrl: 'https://deepshaft-flame.vercel.app/tonconnect-manifest.json' });
+      TCUI.onStatusChange(w => { TC_WALLET = w; updateWalletDisplay(); });
+      await TCUI.openModal();
+    }
+  }catch(e){ toast('Wallet connect failed: ' + e.message); }
+}
+function updateWalletDisplay(){
+  if(TC_WALLET && TC_WALLET.account){
+    $('#walletAddr').textContent = 'Connected: ' + shortAddr(TC_WALLET.account.address);
+  } else { $('#walletAddr').textContent = ''; }
+}
+
+/* ====================== BROADCAST ====================== */
+async function broadcastMessage(){
+  const title = $('#bcTitle').value.trim(); const msg = $('#bcMsg').value.trim();
+  const botKey = $('#bcBotKey').value.trim();
+  if(!title || !msg || !botKey){ toast('Fill all fields'); return; }
+  $('#bcResult').innerHTML = '<span style="color:var(--mut)">Sending...</span>';
+  // Get all user Telegram IDs from Firebase
+  const users = await fbGet('users');
+  if(!users){ $('#bcResult').innerHTML = '<span style="color:var(--bad)">No users found</span>'; return; }
+  let sent = 0, failed = 0;
+  const tgIds = Object.keys(users).filter(id => id.startsWith('tg_')).map(id => parseInt(id.slice(3)));
+  // Send via Bot API (sendMessage to each user)
+  for(const tgId of tgIds){
+    try{
+      const apiUrl = 'https://api.telegram.org/bot'+botKey+'/sendMessage';
+      const resp = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ chat_id: tgId, text: '*'+title+'*\n\n'+msg, parse_mode: 'Markdown' })
+      });
+      if(resp.ok){ sent++; } else { failed++; }
+    }catch(e){ failed++; }
+  }
+  $('#bcResult').innerHTML = '<span style="color:var(--good)">Sent: '+sent+'</span> <span style="color:var(--bad)">Failed: '+failed+'</span>';
+  toast('Broadcast complete: '+sent+' sent');
+}
+function notifyApp(){
+  const title = $('#bcTitle').value.trim() || 'Notice';
+  const msg = $('#bcMsg').value.trim() || 'Hello from admin';
+  localStorage.setItem('cp_inbox', JSON.stringify([{ cmd:'notify', title, msg }]));
+  if(BC) BC.postMessage('config');
+  toast('In-app notification sent');
+}
+
+/* ====================== REFERRALS ====================== */
+function loadReferrals(){
+  if(!fbReady()){ setTimeout(loadReferrals,500); return; }
+  fbOn('users', users => {
+    USERS_CACHE = users||{};
+    const ids = Object.keys(USERS_CACHE);
+    let totalRefs = 0;
+    const referrers = [];
+    ids.forEach(id => {
+      const u = USERS_CACHE[id];
+      const invited = u.invitedCount || 0;
+      if(invited > 0){
+        totalRefs += invited;
+        const p = u.profile||{};
+        referrers.push({ id, name: p.name||id, tgId: id.replace('tg_',''), invited, earned: (u.state&&u.state.friends&&u.state.friends.earnedOre)||0 });
+      }
+    });
+    referrers.sort((a,b) => b.invited - a.invited);
+    $('#refStats').innerHTML = statCard('Total Referrals', totalRefs, '', 'cyan') + statCard('Active Referrers', referrers.length, '', 'green');
+    if(!referrers.length){ $('#refTable').innerHTML = '<tr><td colspan="4" class="empty">No referrals yet</td></tr>'; return; }
+    $('#refTable').innerHTML = referrers.slice(0, 50).map(r => '<tr><td>'+esc(r.name)+'</td><td>'+esc(r.tgId)+'</td><td>'+r.invited+'</td><td>'+fmt(r.earned)+' ORE</td></tr>').join('');
+  });
+}
+
+/* ====================== CONFIG ====================== */
+let MT_CHANNELS = [];
+function loadConfig(){
+  const cfg = getCpConfig();
+  // Merge with defaults
+  const full = {
+    app: { name:'DEEPSHAFT', tagline:'Idle Mining Empire', supportUrl:'https://t.me/deepshaftOG_Support', botUsername:'deepshaftOG_bot' },
+    economy: { orePerTon:20000, xpPerOre:0.05, withdraw:{minOre:40000,feePercent:5} },
+    earnings: { dailyGramReward:0.01, purchaseBoostPercent:5, purchaseBoostDays:30, tonOnlyPurchases:true },
+    swap: { oreToGem:{rate:5000}, gemToOre:{rate:4200}, feePercent:2 },
+    mandatoryTasks: { enabled:true, botApiKey:'8996546322:AAG-rM99q3Dcx4QPgx-9-r0zdk9kKLfjufA', checkIntervalSec:30, channels:[] },
+    payments: { tonconnect:{manifestUrl:'https://deepshaft-flame.vercel.app/tonconnect-manifest.json'}, direct:{address:'UQDcrE3BlEZk12IPC2l7r_mAMehPnxCwWSpIrBXMbtsNUx9q'} }
+  };
+  const merged = deepMerge(full, cfg);
+  $('#cfgAppName').value = merged.app.name || '';
+  $('#cfgTagline').value = merged.app.tagline || '';
+  $('#cfgSupportUrl').value = merged.app.supportUrl || '';
+  $('#cfgBotUser').value = merged.app.botUsername || '';
+  $('#cfgWallet').value = merged.payments.direct.address || '';
+  $('#cfgManifest').value = merged.payments.tonconnect.manifestUrl || '';
+  $('#cfgOrePerTon').value = merged.economy.orePerTon || 20000;
+  $('#cfgXpPerOre').value = merged.economy.xpPerOre || 0.05;
+  $('#cfgWdMin').value = merged.economy.withdraw.minOre || 40000;
+  $('#cfgWdFee').value = merged.economy.withdraw.feePercent || 5;
+  $('#cfgGram').value = merged.earnings.dailyGramReward || 0.01;
+  $('#cfgBoost').value = merged.earnings.purchaseBoostPercent || 5;
+  $('#cfgBoostDays').value = merged.earnings.purchaseBoostDays || 30;
+  $('#cfgTonOnly').classList.toggle('on', merged.earnings.tonOnlyPurchases !== false);
+  $('#cfgO2G').value = merged.swap.oreToGem.rate || 5000;
+  $('#cfgG2O').value = merged.swap.gemToOre.rate || 4200;
+  $('#cfgSwapFee').value = merged.swap.feePercent || 2;
+  $('#cfgMtEnabled').classList.toggle('on', merged.mandatoryTasks.enabled !== false);
+  $('#cfgMtBotKey').value = merged.mandatoryTasks.botApiKey || '';
+  $('#cfgMtInterval').value = merged.mandatoryTasks.checkIntervalSec || 30;
+  MT_CHANNELS = merged.mandatoryTasks.channels || [];
+  renderMtChannels();
+}
+function renderMtChannels(){
+  $('#mtChannels').innerHTML = MT_CHANNELS.map((ch, i) =>
+    '<div style="border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:8px">' +
+    '<div class="row between"><b style="font-size:12px">Channel '+(i+1)+'</b><button class="btn btn-bad btn-sm" onclick="MT_CHANNELS.splice('+i+',1);renderMtChannels()">Remove</button></div>' +
+    '<div class="field"><label class="lbl">Name</label><input class="inp" value="'+esc(ch.name||'')+'" oninput="MT_CHANNELS['+i+'].name=this.value"></div>' +
+    '<div class="field"><label class="lbl">Username</label><input class="inp" value="'+esc(ch.username||'')+'" oninput="MT_CHANNELS['+i+'].username=this.value"></div>' +
+    '<div class="field"><label class="lbl">URL</label><input class="inp" value="'+esc(ch.url||'')+'" oninput="MT_CHANNELS['+i+'].url=this.value"></div>' +
+    '<div class="field"><label class="lbl">Logo URL</label><input class="inp" value="'+esc(ch.logo||'')+'" oninput="MT_CHANNELS['+i+'].logo=this.value"></div>' +
+    '</div>'
+  ).join('');
+}
+function addMtChannel(){ MT_CHANNELS.push({ name:'', username:'', url:'', logo:'' }); renderMtChannels(); }
+function saveConfig(){
+  const cfg = getCpConfig();
+  cfg.app = cfg.app||{};
+  cfg.app.name = $('#cfgAppName').value;
+  cfg.app.tagline = $('#cfgTagline').value;
+  cfg.app.supportUrl = $('#cfgSupportUrl').value;
+  cfg.app.botUsername = $('#cfgBotUser').value;
+  cfg.payments = cfg.payments||{}; cfg.payments.direct = cfg.payments.direct||{}; cfg.payments.tonconnect = cfg.payments.tonconnect||{};
+  cfg.payments.direct.address = $('#cfgWallet').value;
+  cfg.payments.tonconnect.manifestUrl = $('#cfgManifest').value;
+  cfg.economy = cfg.economy||{}; cfg.economy.withdraw = cfg.economy.withdraw||{};
+  cfg.economy.orePerTon = Number($('#cfgOrePerTon').value)||20000;
+  cfg.economy.xpPerOre = Number($('#cfgXpPerOre').value)||0.05;
+  cfg.economy.withdraw.minOre = Number($('#cfgWdMin').value)||40000;
+  cfg.economy.withdraw.feePercent = Number($('#cfgWdFee').value)||5;
+  cfg.earnings = cfg.earnings||{};
+  cfg.earnings.dailyGramReward = Number($('#cfgGram').value)||0.01;
+  cfg.earnings.purchaseBoostPercent = Number($('#cfgBoost').value)||5;
+  cfg.earnings.purchaseBoostDays = Number($('#cfgBoostDays').value)||30;
+  cfg.earnings.tonOnlyPurchases = $('#cfgTonOnly').classList.contains('on');
+  cfg.swap = cfg.swap||{}; cfg.swap.oreToGem = cfg.swap.oreToGem||{}; cfg.swap.gemToOre = cfg.swap.gemToOre||{};
+  cfg.swap.oreToGem.rate = Number($('#cfgO2G').value)||5000;
+  cfg.swap.gemToOre.rate = Number($('#cfgG2O').value)||4200;
+  cfg.swap.feePercent = Number($('#cfgSwapFee').value)||2;
+  cfg.mandatoryTasks = cfg.mandatoryTasks||{};
+  cfg.mandatoryTasks.enabled = $('#cfgMtEnabled').classList.contains('on');
+  cfg.mandatoryTasks.botApiKey = $('#cfgMtBotKey').value;
+  cfg.mandatoryTasks.checkIntervalSec = Number($('#cfgMtInterval').value)||30;
+  cfg.mandatoryTasks.channels = MT_CHANNELS;
+  setCpConfig(cfg);
+  toast('Configuration saved! Mini app will reload.');
+}
+
+/* ----- Init ----- */
+window.addEventListener('fb-ready', () => { loadDashboard(); });
+setTimeout(() => { if(fbReady()) loadDashboard(); }, 1000);
+</script>
+</body>
+</html>
