@@ -108,6 +108,11 @@ select.inp{cursor:pointer}
   <div class="nav-item" data-page="withdrawals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg><span>Withdrawals</span></div>
   <div class="nav-item" data-page="broadcast"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg><span>Broadcast</span></div>
   <div class="nav-item" data-page="referrals"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg><span>Referrals</span></div>
+  <div class="nav-item" data-page="maps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4l-6 2v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg><span>Maps</span></div>
+  <div class="nav-item" data-page="gear"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg><span>Gear</span></div>
+  <div class="nav-item" data-page="boosts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg><span>Boosts</span></div>
+  <div class="nav-item" data-page="analytics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg><span>Analytics</span></div>
+  <div class="nav-item" data-page="logs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg><span>Logs</span></div>
   <div class="nav-item" data-page="config"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Config</span></div>
 </div>
 <div class="main">
@@ -245,6 +250,72 @@ select.inp{cursor:pointer}
     <button class="btn btn-gh btn-sm" onclick="addMtChannel()" style="margin-top:8px">+ Add Channel</button>
   </div>
   <button class="btn btn-ac" onclick="saveConfig()" style="margin-top:16px">Save All Config</button>
+  <div class="card" style="margin-top:16px"><h2>Navigation Settings</h2>
+    <div class="field"><label class="lbl">Nav Order (comma-separated)</label><input class="inp" id="cfgNavOrder" value="mine,tasks,store,friends,more"></div>
+    <div class="field"><label class="lbl">Nav Labels (JSON)</label><input class="inp" id="cfgNavLabels" value='{"mine":"DIG","tasks":"JOBS","store":"SHOP","friends":"CREW","more":"MENU"}'></div>
+  </div>
+  <div class="card"><h2>Pages Text</h2>
+    <div class="field"><label class="lbl">About Text</label><textarea class="inp" id="cfgAbout" rows="3" style="resize:vertical"></textarea></div>
+    <div class="field"><label class="lbl">Terms Text</label><textarea class="inp" id="cfgTerms" rows="3" style="resize:vertical"></textarea></div>
+  </div>
+  <div class="card"><h2>Mining Settings</h2>
+    <div class="row"><div class="grow"><label class="lbl">Fields Count</label><input class="inp" id="cfgFields" type="number" value="6"></div>
+    <div class="grow"><label class="lbl">Tick MS</label><input class="inp" id="cfgTick" type="number" value="1000"></div></div>
+    <div class="row"><div class="grow"><label class="lbl">Offline Hours Cap</label><input class="inp" id="cfgOffline" type="number" value="8"></div>
+    <div class="grow"><label class="lbl">Offline Efficiency</label><input class="inp" id="cfgOfflineEff" type="number" step="0.1" value="0.6"></div></div>
+    <div class="row"><div class="grow"><label class="lbl">Vein HP Base</label><input class="inp" id="cfgVeinHP" type="number" value="55"></div>
+    <div class="grow"><label class="lbl">Vein Value Base</label><input class="inp" id="cfgVeinVal" type="number" value="42"></div></div>
+    <div class="row"><div class="grow"><label class="lbl">Gem Drop Chance</label><input class="inp" id="cfgGemDrop" type="number" step="0.01" value="0.06"></div>
+    <div class="grow"><label class="lbl">Upgrade Power Step</label><input class="inp" id="cfgUpgStep" type="number" step="0.01" value="0.22"></div></div>
+  </div>
+  <div class="card"><h2>Daily Rewards</h2>
+    <div class="row"><div class="grow"><label class="lbl">Base ORE</label><input class="inp" id="cfgDailyOre" type="number" value="600"></div>
+    <div class="grow"><label class="lbl">Base GEM</label><input class="inp" id="cfgDailyGem" type="number" value="2"></div>
+    <div class="grow"><label class="lbl">Streak Step</label><input class="inp" id="cfgStreakStep" type="number" step="0.05" value="0.25"></div>
+    <div class="grow"><label class="lbl">Streak Cap</label><input class="inp" id="cfgStreakCap" type="number" value="3"></div></div>
+  </div>
+  <div class="card"><h2>Data Management</h2>
+    <button class="btn btn-cy" onclick="exportUsers()">Export Users (JSON)</button>
+    <button class="btn btn-gh" onclick="exportPayments()">Export Payments</button>
+    <button class="btn btn-gh" onclick="exportWithdrawals()">Export Withdrawals</button>
+    <button class="btn btn-bad" onclick="clearEvents()">Clear Event Log</button>
+  </div>
+</div>
+
+<!-- MAPS -->
+<div class="page" id="page-maps">
+  <h1>Maps Management</h1>
+  <div class="card"><h2>Game Maps</h2><div id="mapsList"></div></div>
+</div>
+
+<!-- GEAR -->
+<div class="page" id="page-gear">
+  <h1>Gear Management</h1>
+  <div class="card"><h2>All Gear Items</h2><div id="gearList"></div></div>
+</div>
+
+<!-- BOOSTS -->
+<div class="page" id="page-boosts">
+  <h1>Boosts Management</h1>
+  <div class="card"><h2>Speed Boosts</h2><div id="boostsList"></div></div>
+  <div class="card"><h2>Gem Packs</h2><div id="gemPacksList"></div></div>
+</div>
+
+<!-- ANALYTICS -->
+<div class="page" id="page-analytics">
+  <h1>Analytics</h1>
+  <div class="stats-grid" id="analyticsStats"></div>
+  <div class="card"><h2>Revenue by Day (Last 7 Days)</h2><div id="revenueChart"></div></div>
+  <div class="card"><h2>User Growth (Last 30 Days)</h2><div id="growthChart"></div></div>
+  <div class="card"><h2>Top Purchased Miners</h2><div id="topMiners"></div></div>
+  <div class="card"><h2>Task Completion Stats</h2><div id="taskStats"></div></div>
+</div>
+
+<!-- LOGS -->
+<div class="page" id="page-logs">
+  <h1>Activity Logs</h1>
+  <div class="card"><h2>Event Log</h2><div id="logsList" style="max-height:500px;overflow-y:auto"></div></div>
+  <div class="card"><h2>Firebase Devices</h2><div id="devicesList"></div></div>
 </div>
 
 </div>
@@ -286,6 +357,11 @@ function refreshPage(page){
   else if(page==='payments') loadPayments();
   else if(page==='withdrawals') loadWithdrawals();
   else if(page==='referrals') loadReferrals();
+  else if(page==='maps') loadMaps();
+  else if(page==='gear') loadGear();
+  else if(page==='boosts') loadBoosts();
+  else if(page==='analytics') loadAnalytics();
+  else if(page==='logs') loadLogs();
   else if(page==='config') loadConfig();
 }
 
@@ -766,6 +842,87 @@ function saveConfig(){
   setCpConfig(cfg);
   toast('Configuration saved! Mini app will reload.');
 }
+
+/* ====================== MAPS ====================== */
+function loadMaps(){
+  const cfg = getCpConfig(); const maps = cfg.maps || [];
+  if(!maps.length){ $('#mapsList').innerHTML = '<div class="empty">No maps configured</div>'; return; }
+  $('#mapsList').innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>ID</th><th>Name</th><th>Sub</th><th>Multiplier</th><th>Req Level</th><th>Cost ORE</th><th>Enabled</th></tr></thead><tbody>' +
+    maps.map(m => '<tr><td style="font-size:10px">'+esc(m.id)+'</td><td>'+esc(m.name)+'</td><td>'+esc(m.sub||'')+'</td><td>x'+m.mult+'</td><td>L'+(m.reqLevel||1)+'</td><td>'+fmt(m.costOre||0)+'</td><td>'+(m.enabled!==false?'<span class="badge go">Yes</span>':'<span class="badge rd">No</span>')+'</td></tr>').join('') +
+    '</tbody></table></div>';
+}
+
+/* ====================== GEAR ====================== */
+function loadGear(){
+  const cfg = getCpConfig(); const gear = cfg.gear || [];
+  if(!gear.length){ $('#gearList').innerHTML = '<div class="empty">No gear configured</div>'; return; }
+  $('#gearList').innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>ID</th><th>Name</th><th>Slot</th><th>Desc</th><th>Price TON</th><th>Enabled</th></tr></thead><tbody>' +
+    gear.map(g => '<tr><td style="font-size:10px">'+esc(g.id)+'</td><td>'+esc(g.name)+'</td><td>'+esc(g.slot)+'</td><td style="font-size:10px">'+esc(g.desc||'')+'</td><td>'+fmtTon(g.costTon||0)+'</td><td>'+(g.enabled!==false?'<span class="badge go">Yes</span>':'<span class="badge rd">No</span>')+'</td></tr>').join('') +
+    '</tbody></table></div>';
+}
+
+/* ====================== BOOSTS ====================== */
+function loadBoosts(){
+  const cfg = getCpConfig();
+  const boosts = (cfg.mining && cfg.mining.boosts) || [];
+  const packs = cfg.gemPacks || [];
+  $('#boostsList').innerHTML = boosts.length ? '<div style="overflow-x:auto"><table><thead><tr><th>ID</th><th>Name</th><th>Mult</th><th>Min</th><th>TON</th><th>On</th></tr></thead><tbody>' +
+    boosts.map(b => '<tr><td style="font-size:10px">'+esc(b.id)+'</td><td>'+esc(b.name)+'</td><td>x'+b.mult+'</td><td>'+b.minutes+'</td><td>'+fmtTon(b.priceTon||0)+'</td><td>'+(b.enabled!==false?'Yes':'No')+'</td></tr>').join('') +
+    '</tbody></table></div>' : '<div class="empty">No boosts</div>';
+  $('#gemPacksList').innerHTML = packs.length ? '<div style="overflow-x:auto"><table><thead><tr><th>ID</th><th>Label</th><th>Gems</th><th>TON</th><th>Bonus</th></tr></thead><tbody>' +
+    packs.map(p => '<tr><td style="font-size:10px">'+esc(p.id)+'</td><td>'+esc(p.label)+'</td><td>'+p.gems+'</td><td>'+fmtTon(p.priceTon)+'</td><td>'+(p.bonusPercent||0)+'%</td></tr>').join('') +
+    '</tbody></table></div>' : '<div class="empty">No gem packs</div>';
+}
+
+/* ====================== ANALYTICS ====================== */
+function loadAnalytics(){
+  if(!fbReady()){ setTimeout(loadAnalytics,500); return; }
+  const pays = JSON.parse(localStorage.getItem('cp_payments') || '[]');
+  const wds = JSON.parse(localStorage.getItem('cp_withdrawals') || '[]');
+  const events = JSON.parse(localStorage.getItem('cp_events') || '[]');
+  const totalRev = pays.reduce((s,p)=>s+(Number(p.amountTon)||0),0);
+  const totalWd = wds.filter(w=>w.status==='paid').reduce((s,w)=>s+(Number(w.amountTon)||0),0);
+  const pendingWd = wds.filter(w=>w.status==='pending').reduce((s,w)=>s+(Number(w.amountTon)||0),0);
+  $('#analyticsStats').innerHTML = statCard('Total Revenue', fmtTon(totalRev)+' TON', '', 'gold') + statCard('Paid Withdrawals', fmtTon(totalWd)+' TON', '', 'cyan') + statCard('Pending WD', fmtTon(pendingWd)+' TON', '', 'red') + statCard('Events', events.length, '', 'green');
+  const days = []; const now = Date.now();
+  for(let i=6;i>=0;i--){ const ds=new Date(now-i*86400000);ds.setHours(0,0,0,0); const rev=pays.filter(p=>p.ts>=ds.getTime()&&p.ts<ds.getTime()+86400000).reduce((s,p)=>s+(Number(p.amountTon)||0),0); days.push({l:ds.toLocaleDateString('en',{weekday:'short'}),r:rev}); }
+  const maxR = Math.max(...days.map(d=>d.r),0.01);
+  $('#revenueChart').innerHTML = '<div style="display:flex;align-items:flex-end;gap:8px;height:120px">' + days.map(d => '<div style="flex:1;text-align:center"><div style="background:var(--accent);height:'+Math.max(d.r/maxR*100,2)+'px;border-radius:4px 4px 0 0;margin-bottom:4px"></div><div style="font-size:10px;color:var(--mut)">'+d.l+'</div><div style="font-size:9px">'+fmtTon(d.r)+'</div></div>').join('') + '</div>';
+  const userIds = Object.keys(USERS_CACHE);
+  const growth = [];
+  for(let i=29;i>=0;i--){ const ds=new Date(now-i*86400000);ds.setHours(0,0,0,0); const c=userIds.filter(id=>{const u=USERS_CACHE[id];return(u.state&&u.state.createdAt||0)>=ds.getTime()&&(u.state&&u.state.createdAt||0)<ds.getTime()+86400000;}).length; growth.push(c); }
+  const maxG = Math.max(...growth,1);
+  $('#growthChart').innerHTML = '<div style="display:flex;align-items:flex-end;gap:2px;height:80px">' + growth.map(g => '<div style="flex:1;background:var(--accent2);height:'+Math.max(g/maxG*100,2)+'px;border-radius:2px 2px 0 0"></div>').join('') + '</div>';
+  const mc = {}; pays.forEach(p => { if(p.kind==='miner'&&p.item){ mc[p.item]=(mc[p.item]||0)+1; } });
+  const tm = Object.entries(mc).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  $('#topMiners').innerHTML = tm.length ? '<table><thead><tr><th>Miner</th><th>Purchases</th></tr></thead><tbody>' + tm.map(m=>'<tr><td>'+esc(m[0])+'</td><td>'+m[1]+'</td></tr>').join('') + '</tbody></table>' : '<div class="empty">No purchases</div>';
+  $('#taskStats').innerHTML = '<div style="font-size:14px">Task/purchase events: <b>'+events.filter(e=>e.type==='task'||e.type==='purchase').length+'</b></div>';
+}
+
+/* ====================== LOGS ====================== */
+function loadLogs(){
+  const events = JSON.parse(localStorage.getItem('cp_events') || '[]').slice(0, 100);
+  $('#logsList').innerHTML = events.length ? events.map(e =>
+    '<div style="padding:6px 0;border-bottom:1px solid rgba(34,48,71,.2);font-size:12px"><b style="color:var(--accent2)">'+esc(e.type||'event')+'</b> - '+esc(e.userName||e.userId||'')+' - <span style="color:var(--mut)">'+timeAgo(e.ts)+'</span></div>'
+  ).join('') : '<div class="empty">No logs</div>';
+  if(fbReady()){
+    fbGet('devices').then(devices => {
+      if(!devices){ $('#devicesList').innerHTML = '<div class="empty">No devices</div>'; return; }
+      const devs = Object.entries(devices).map(([id,d])=>({id,...d}));
+      $('#devicesList').innerHTML = '<div style="overflow-x:auto"><table><thead><tr><th>Device ID</th><th>User</th><th>TG ID</th><th>First Seen</th><th>Last Seen</th><th>Actions</th></tr></thead><tbody>' +
+        devs.map(d => '<tr><td style="font-size:10px">'+esc(d.id.slice(0,20))+'...</td><td>'+esc(d.userName||'-')+'</td><td>'+esc(d.tgUserId||'-')+'</td><td>'+timeAgo(d.firstSeen)+'</td><td>'+timeAgo(d.lastSeen)+'</td><td><button class="btn btn-bad btn-sm" onclick="unblockDevice(\''+esc(d.id)+'\')">Delete</button></td></tr>').join('') +
+        '</tbody></table></div>';
+    });
+  } else { $('#devicesList').innerHTML = '<div class="empty">Connecting...</div>'; }
+}
+async function unblockDevice(deviceId){ await fbDel('devices/' + deviceId); toast('Device deleted'); loadLogs(); }
+
+/* ====================== EXPORT ====================== */
+function exportUsers(){ downloadFile(JSON.stringify(USERS_CACHE,null,2), 'users.json', 'application/json'); }
+function exportPayments(){ downloadFile(JSON.stringify(JSON.parse(localStorage.getItem('cp_payments')||'[]'),null,2), 'payments.json', 'application/json'); }
+function exportWithdrawals(){ downloadFile(JSON.stringify(JSON.parse(localStorage.getItem('cp_withdrawals')||'[]'),null,2), 'withdrawals.json', 'application/json'); }
+function downloadFile(content, filename, type){ const b=new Blob([content],{type:type||'text/plain'}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=filename; a.click(); URL.revokeObjectURL(u); }
+function clearEvents(){ if(!confirm('Clear all event logs?'))return; localStorage.setItem('cp_events','[]'); toast('Cleared'); loadLogs(); }
 
 /* ----- Init ----- */
 window.addEventListener('fb-ready', () => { loadDashboard(); });
