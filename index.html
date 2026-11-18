@@ -1082,7 +1082,8 @@ function getDeviceId(){
   return did;
 }
 
-/* Multi-account check - one device, one account. Others blocked from claiming referrals. */
+/* Multi-account check - first account stays normal, new accounts on same device get banned.
+   Unbanned users can access until they trigger multi-account again. */
 async function checkMultiAccount(){
   if (!USER || !USER.id) return;
   const F = CFG.friends || {};
@@ -1095,66 +1096,70 @@ async function checkMultiAccount(){
     // 1. Check ban list from control panel
     const banSnap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/banned'));
     if (banSnap.exists() && banSnap.val() === true){
-      ST.friends.blockedReferrals = true; save();
+      ST.friends.blockedReferrals = true;
+      ST.friends.blockedReason = 'Your account has been banned by the admin.';
+      save();
       showMultiAccountBlock('Your account has been banned by the admin.', 'Admin ban');
       return;
     }
 
-    // 2. Check device -> user: is this device already used by another Telegram account?
-    const devSnap = await window.FB.get(window.FB.ref(window.FB.db, 'devices/' + deviceId));
-    if (devSnap.exists()){
-      const devData = devSnap.val();
-      const existingUser = devData.userId;
-      if (existingUser && existingUser !== fbUserId){
-        // MULTI-ACCOUNT ON SAME DEVICE DETECTED
-        ST.friends.blockedReferrals = true; save();
-        window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/multiAccount'), {
-          deviceUsedBy: existingUser, detectedAt: Date.now(), deviceId: deviceId, tgUserId: tgUserId
+    // 2. Check if user was previously unbanned (skip device check for them)
+    const unbanSnap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/unbanned'));
+    const isUnbanned = unbanSnap.exists() && unbanSnap.val() === true;
+
+    // 3. Check device -> user: is this device already used by another Telegram account?
+    if (!isUnbanned){
+      const devSnap = await window.FB.get(window.FB.ref(window.FB.db, 'devices/' + deviceId));
+      if (devSnap.exists()){
+        const devData = devSnap.val();
+        const existingUser = devData.userId;
+        if (existingUser && existingUser !== fbUserId){
+          // MULTI-ACCOUNT: This device belongs to another account (the first/original account)
+          // The NEW account (current user) gets banned. The FIRST account stays normal.
+          ST.friends.blockedReferrals = true;
+          ST.friends.blockedReason = 'This device is already linked to another account.';
+          save();
+          window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/banned'), true);
+          window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/multiAccount'), {
+            deviceUsedBy: existingUser, detectedAt: Date.now(), deviceId: deviceId, tgUserId: tgUserId
+          });
+          window.FB.set(window.FB.ref(window.FB.db, 'bannedUsers/' + fbUserId), {
+            reason: 'multi_account_same_device', deviceId: deviceId, originalAccount: existingUser,
+            detectedAt: Date.now(), tgUserId: tgUserId, userName: USER.name || ''
+          });
+          showMultiAccountBlock('This device is already linked to another account. Multi-accounting is not allowed.', existingUser);
+          return;
+        }
+        // Same user on same device - just update lastSeen (first account stays normal)
+        window.FB.set(window.FB.ref(window.FB.db, 'devices/' + deviceId), {
+          userId: fbUserId, tgUserId: tgUserId, userName: USER.name || '',
+          firstSeen: devData.firstSeen || Date.now(), lastSeen: Date.now()
         });
-        window.FB.set(window.FB.ref(window.FB.db, 'bannedUsers/' + fbUserId), {
-          reason: 'multi_account_same_device', deviceId: deviceId, originalAccount: existingUser,
-          detectedAt: Date.now(), tgUserId: tgUserId, userName: USER.name || ''
+      } else {
+        // New device - register it
+        window.FB.set(window.FB.ref(window.FB.db, 'devices/' + deviceId), {
+          userId: fbUserId, tgUserId: tgUserId, userName: USER.name || '',
+          firstSeen: Date.now(), lastSeen: Date.now()
         });
-        showMultiAccountBlock('This device is already linked to another Telegram account. Multi-accounting is not allowed.', existingUser);
-        return;
+        window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/deviceId'), deviceId);
       }
-      // Same user on same device - just update lastSeen
-      window.FB.set(window.FB.ref(window.FB.db, 'devices/' + deviceId), {
-        userId: fbUserId, tgUserId: tgUserId, userName: USER.name || '',
-        firstSeen: devData.firstSeen || Date.now(), lastSeen: Date.now()
-      });
-    } else {
-      // New device - register it
-      window.FB.set(window.FB.ref(window.FB.db, 'devices/' + deviceId), {
-        userId: fbUserId, tgUserId: tgUserId, userName: USER.name || '',
-        firstSeen: Date.now(), lastSeen: Date.now()
-      });
-      window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/deviceId'), deviceId);
     }
 
-    // 3. Check user -> device: has this user used a different device?
-    const userDevSnap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/deviceId'));
-    if (userDevSnap.exists()){
-      const regDev = userDevSnap.val();
-      if (regDev && regDev !== deviceId){
-        ST.friends.blockedReferrals = true; save();
-        window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/multiDevice'), {
-          registeredDevice: regDev, currentDevice: deviceId, detectedAt: Date.now()
-        });
-        window.FB.set(window.FB.ref(window.FB.db, 'bannedUsers/' + fbUserId), {
-          reason: 'multi_device', registeredDevice: regDev, currentDevice: deviceId,
-          detectedAt: Date.now(), tgUserId: tgUserId, userName: USER.name || ''
-        });
-        showMultiAccountBlock('Multiple devices detected. One account per device only.', regDev);
-        return;
-      }
-    } else {
+    // 4. All clear - user is either the first account, or was unbanned
+    const wasBlocked = ST.friends.blockedReferrals;
+    ST.friends.blockedReferrals = false;
+    ST.friends.blockedReason = '';
+    save();
+    // For unbanned users: keep the unbanned flag (persistent) so they can always access
+    if (!isUnbanned){
       window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/deviceId'), deviceId);
     }
-
-    // 4. All clear
-    if (ST.friends.blockedReferrals !== false){
-      ST.friends.blockedReferrals = false; save();
+    window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/online'), {
+      online: true, lastSeen: Date.now(), deviceId: deviceId
+    });
+    // If user was previously blocked but now cleared, reload to show the app
+    if (wasBlocked){
+      location.reload();
     }
   }catch(e){
     setTimeout(checkMultiAccount, 2000);
@@ -1169,7 +1174,6 @@ function showMultiAccountBlock(reason, otherAccount){
   const supportUser = CFG.app.supportUsername || 'deepshaftOG_Support';
   const deviceId = getDeviceId();
   const otherAcc = otherAccount || '';
-  // Replace entire app with banned page
   const appwrap = $('#appwrap');
   if (!appwrap) return;
   appwrap.innerHTML = '<div id="bannedPage" style="position:absolute;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:radial-gradient(600px 420px at 50% 28%, #1a0a0a, #0b0f1a);text-align:center">'
@@ -1183,12 +1187,77 @@ function showMultiAccountBlock(reason, otherAccount){
     + '<div style="font-size:12px;color:#eaf0fb;margin-bottom:6px">Your Telegram ID: <b style="color:#22d3ee" class="num">' + (USER ? USER.id : '-') + '</b></div>'
     + '<div style="font-size:12px;color:#eaf0fb;margin-bottom:6px">Device ID: <b style="color:#f5b942" class="num">' + esc(deviceId) + '</b></div>'
     + (otherAcc ? '<div style="font-size:12px;color:#eaf0fb;margin-bottom:6px">Linked account: <b style="color:#f87171" class="num">' + esc(otherAcc) + '</b></div>' : '')
-    + '<div style="font-size:11px;color:#8b98ad;margin-top:8px;line-height:1.4">Rule: One account per device. Using multiple accounts on the same device is not allowed.</div>'
+    + '<div style="font-size:11px;color:#8b98ad;margin-top:8px;line-height:1.4">Rule: One account per device. The first account stays normal. New accounts on the same device are banned.</div>'
     + '</div>'
     + '<button class="btn tonb block" style="max-width:320px" data-act="support">' + I('send') + 'Contact @' + esc(supportUser) + '</button>'
-    + '<div style="font-size:11px;color:#8b98ad;margin-top:16px">If you believe this is an error, contact support.</div>'
+    + '<button class="btn ghost block" style="max-width:320px;margin-top:8px" id="unbanCheckBtn" data-act="check-unban">Check Ban Status</button>'
+    + '<div id="unbanStatus" style="font-size:11px;color:#8b98ad;margin-top:12px;max-width:320px;text-align:center">Checking ban status...</div>'
     + '</div>';
-  // Re-bind delegation for the support button
+  // Set up unban detection - waits for Firebase if not ready yet
+  setupUnbanListener();
+}
+
+/* Set up unban listener - retries until Firebase is ready */
+function setupUnbanListener(){
+  if (!USER || !USER.id) return;
+  if (!window.FB || !FB_READY){
+    // Firebase not ready yet - retry every 2 seconds
+    setTimeout(setupUnbanListener, 2000);
+    // Also do a manual check via fetch as fallback
+    manualUnbanCheck();
+    return;
+  }
+  try{
+    const fbId = 'tg_' + USER.id;
+    // Listen for banned field changes
+    window.FB.onValue(window.FB.ref(window.FB.db, 'users/' + fbId + '/banned'), (snap) => {
+      const banned = snap.exists() && snap.val() === true;
+      if (!banned){
+        // UNBANNED! Reload immediately
+        ST.friends.blockedReferrals = false;
+        ST.friends.blockedReason = '';
+        saveNow();
+        location.reload();
+      }
+    });
+    // Listen for unbanned flag
+    window.FB.onValue(window.FB.ref(window.FB.db, 'users/' + fbId + '/unbanned'), (snap) => {
+      if (snap.exists() && snap.val() === true){
+        ST.friends.blockedReferrals = false;
+        ST.friends.blockedReason = '';
+        saveNow();
+        location.reload();
+      }
+    });
+    const el = $('#unbanStatus');
+    if (el) el.textContent = 'Connected. Waiting for unban...';
+  }catch(e){
+    setTimeout(setupUnbanListener, 3000);
+  }
+}
+
+/* Manual unban check via fetch as fallback (for when Firebase listener isn't working) */
+let MANUAL_UNBAN_INTERVAL = null;
+function manualUnbanCheck(){
+  if (MANUAL_UNBAN_INTERVAL) return; // Already running
+  if (!USER || !USER.id) return;
+  MANUAL_UNBAN_INTERVAL = setInterval(async () => {
+    if (window.FB && FB_READY){
+      try{
+        const snap = await window.FB.get(window.FB.ref(window.FB.db, 'users/tg_' + USER.id + '/banned'));
+        const banned = snap.exists() && snap.val() === true;
+        if (!banned){
+          ST.friends.blockedReferrals = false;
+          ST.friends.blockedReason = '';
+          saveNow();
+          clearInterval(MANUAL_UNBAN_INTERVAL);
+          location.reload();
+        }
+        const el = $('#unbanStatus');
+        if (el) el.textContent = 'Ban status: ' + (banned ? 'Banned' : 'Unbanned! Reloading...');
+      }catch(e){}
+    }
+  }, 5000); // Check every 5 seconds
 }
 
 /* Process referral during loading screen - ONLY uses start_param, shows welcome ONCE */
@@ -1356,11 +1425,30 @@ function listenReferrals(){
         REFERRALS_LIST = [];
       }
     });
-    // Listen for ban changes
+    // Listen for ban/unban changes in real-time
     window.FB.onValue(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/banned'), (snap) => {
-      if (snap.exists() && snap.val() === true && !ST.friends.blockedReferrals){
-        ST.friends.blockedReferrals = true; save();
+      const isBanned = snap.exists() && snap.val() === true;
+      if (isBanned && !ST.friends.blockedReferrals){
+        // BANNED in real-time
+        ST.friends.blockedReferrals = true;
+        ST.friends.blockedReason = 'Your account has been banned by the admin.';
+        save();
         showMultiAccountBlock('Your account has been banned by the admin.', 'Admin ban');
+      } else if (!isBanned && ST.friends.blockedReferrals){
+        // UNBANNED in real-time - reload the app
+        ST.friends.blockedReferrals = false;
+        ST.friends.blockedReason = '';
+        saveNow();
+        location.reload();
+      }
+    });
+    // Also listen for unbanned flag
+    window.FB.onValue(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/unbanned'), (snap) => {
+      if (snap.exists() && snap.val() === true && ST.friends.blockedReferrals){
+        ST.friends.blockedReferrals = false;
+        ST.friends.blockedReason = '';
+        saveNow();
+        location.reload();
       }
     });
   }catch(e){}
@@ -3047,6 +3135,33 @@ const ACT = {
     const url = d.url;
     if (url){ openLink(url); }
   },
+  'check-unban': async (d, el) => {
+    if (el){ el.disabled = true; el.textContent = 'Checking...'; }
+    const statusEl = $('#unbanStatus');
+    if (statusEl) statusEl.textContent = 'Checking ban status...';
+    if (window.FB && FB_READY && USER && USER.id){
+      try{
+        const snap = await window.FB.get(window.FB.ref(window.FB.db, 'users/tg_' + USER.id + '/banned'));
+        const banned = snap.exists() && snap.val() === true;
+        if (!banned){
+          if (statusEl) statusEl.textContent = 'Unbanned! Reloading...';
+          ST.friends.blockedReferrals = false;
+          ST.friends.blockedReason = '';
+          saveNow();
+          setTimeout(() => location.reload(), 500);
+        } else {
+          if (el){ el.disabled = false; el.textContent = 'Check Ban Status'; }
+          if (statusEl) statusEl.textContent = 'Still banned. Contact support to get unbanned.';
+        }
+      }catch(e){
+        if (el){ el.disabled = false; el.textContent = 'Check Ban Status'; }
+        if (statusEl) statusEl.textContent = 'Check failed. Retrying...';
+      }
+    } else {
+      if (el){ el.disabled = false; el.textContent = 'Check Ban Status'; }
+      if (statusEl) statusEl.textContent = 'Connecting to server...';
+    }
+  },
   'mt-check': async (d, el) => {
     if (el){ el.disabled = true; el.textContent = 'Checking...'; }
     const msg = $('#mtMsg');
@@ -3795,6 +3910,7 @@ window.MiniAppAPI = {
     const fbId = 'tg_' + tgUserId;
     try{
       await window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbId + '/banned'), false);
+      await window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbId + '/unbanned'), true);
       await window.FB.set(window.FB.ref(window.FB.db, 'bannedUsers/' + fbId), null);
       return true;
     }catch(e){ return false; }
