@@ -551,7 +551,7 @@ body.reduce *,body.reduce *:before,body.reduce *:after{animation:none!important;
                    users/{tg_userId}/lastSeen -> timestamp
    ============================================================================== */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-app.js";
-import { getDatabase, ref, set, get, onValue, update, serverTimestamp, onDisconnect } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-database.js";
+import { getDatabase, ref, set, get, onValue, update, serverTimestamp, onDisconnect, push, increment } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-database.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-analytics.js";
 
 const firebaseConfig = {
@@ -569,7 +569,7 @@ const fbApp = initializeApp(firebaseConfig);
 try { getAnalytics(fbApp); } catch(e) {}
 const fbDb = getDatabase(fbApp);
 
-window.FB = { db: fbDb, ref, set, get, onValue, update, serverTimestamp, onDisconnect, ready: true };
+window.FB = { db: fbDb, ref, set, get, onValue, update, serverTimestamp, onDisconnect, push, increment, ready: true };
 window.dispatchEvent(new Event('firebase-ready'));
 </script>
 <script>
@@ -620,6 +620,18 @@ window.dispatchEvent(new Event('firebase-ready'));
                    new BroadcastChannel('cp_channel').postMessage('config')
                    window.dispatchEvent(new Event('cp-push')) // same window
                    localStorage.setItem('cp_inbox', ...) // storage event, other tab
+
+   NEW - FIREBASE LIVE CONTROL (control.html on any device drives every user remotely):
+     config/app            global config, live-reloaded by all users (highest priority)
+     users/{id}/inbox      one-shot admin commands: grant, notify, unban, reload, reset
+     users/{id}/banned     ban flag watched in REAL TIME (instant ban + instant unban + reload)
+     users/{id}/unbanned   persistent whitelist flag set at unban (device re-access allowed)
+     bannedUsers/{id}      ban records; removal triggers unban
+     devices/{deviceId}    multi-account rule: FIRST account = owner stays normal,
+                           newer accounts banned, unbanned ones whitelisted
+     broadcasts/{id}       global/targeted announcements (all | online | banned | purchasers | tgId)
+     payments/ withdrawals/ deposits/ events/ taskStats/ taskCompletions/   live streams
+     users/{id}/presence   real online status (onDisconnect aware) for the panel
 
    window.MiniAppAPI (callable from control.html when opened via window.open / iframe same origin):
                    getConfig(), setConfig(partialObj), getState(), grant({ore,gems,xp}),
@@ -862,8 +874,10 @@ let CFG = null;
 let CFG_CUSTOM = false;
 function loadConfig(){
   const over = LS.get('cp_config', null);
-  CFG_CUSTOM = !!over;
-  CFG = over ? deepMerge(JSON.parse(JSON.stringify(DEFAULT_CONFIG)), over) : JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+  // Priority: control panel config published to Firebase > localStorage cp_config > defaults
+  const eff = FB_CFG ? deepMerge(over || {}, FB_CFG) : over;
+  CFG_CUSTOM = !!eff;
+  CFG = eff ? deepMerge(JSON.parse(JSON.stringify(DEFAULT_CONFIG)), eff) : JSON.parse(JSON.stringify(DEFAULT_CONFIG));
   return CFG;
 }
 function persistConfigOverride(partial){
@@ -892,7 +906,7 @@ function newState(){
     daily: { last: 0, streak: 0 },
     friends: { code: '', referredBy: '', referredByTgId: 0, referralProcessed: false, invited: 0, totalInvited: 0, earnedOre: 0, blockedReferrals: false, blockedReason: '', deviceId: '', referrerName: '', referrerUsername: '', referrerAvatar: '' },
     ach: {},
-    pay: [], wd: [],
+    pay: [], wd: [], dep: [],
     prefs: {},
     lastDay: '', lastSeen: Date.now(),
     mandatoryTasksDone: false,
@@ -918,7 +932,8 @@ function ensureState(){
   ST.prefs = ST.prefs || {};
   ST.stats = Object.assign({ mined:0, veins:0, tasks:0, buys:0, days:1 }, ST.stats||{});
   ST.tasks = ST.tasks || {}; ST.ach = ST.ach || {};
-  ST.pay = ST.pay || []; ST.wd = ST.wd || [];
+  ST.pay = ST.pay || []; ST.wd = ST.wd || []; ST.dep = ST.dep || [];
+  ST.broadcastSeen = ST.broadcastSeen || [];
   ST.friends = Object.assign({ code: '', referredBy:'', referredByTgId:0, referralProcessed:false, invited:0, totalInvited:0, earnedOre:0, blockedReferrals:false, blockedReason:'', deviceId:'', referrerName:'', referrerUsername:'', referrerAvatar:'' }, ST.friends||{});
   // Set referral code to Telegram user ID if user is available
   if (USER && USER.id && !ST.friends.code) { ST.friends.code = String(USER.id); }
@@ -984,9 +999,16 @@ function saveToFirebase(){
     window.FB.set(r(db, 'users/' + userId + '/state'), ST);
     window.FB.set(r(db, 'users/' + userId + '/lastSeen'), Date.now());
     if (USER){
-      window.FB.set(r(db, 'users/' + userId + '/profile'), {
+      window.FB.update(r(db, 'users/' + userId + '/profile'), {
         name: USER.name || '', username: USER.username || '', photo: USER.photo || '',
-        level: ST.level || 1, ore: ST.ore || 0, gems: ST.gems || 0
+        tgId: USER.id || 0, level: ST.level || 1, ore: ST.ore || 0, gems: ST.gems || 0,
+        xp: ST.xp || 0, totalMined: (ST.stats && ST.stats.mined) || 0,
+        tasksDone: (ST.stats && ST.stats.tasks) || 0, buys: (ST.stats && ST.stats.buys) || 0,
+        totalPurchased: (ST.earnings && ST.earnings.totalPurchased) || 0,
+        createdAt: ST.createdAt || Date.now(), lastSeen: Date.now(),
+        deviceId: (ST.friends && ST.friends.deviceId) || '',
+        banned: ST.friends && ST.friends.blockedReferrals ? true : false,
+        referralCode: String(USER.id)
       });
     }
   }catch(e){}
@@ -1043,6 +1065,14 @@ function initFirebase(){
   FB_READY = true;
   syncFromFirebase();
   listenFirebase();
+  // Global config from control panel (Firebase) - live for every user
+  listenGlobalConfig();
+  // Admin live channel: inbox commands, ban watcher, presence, broadcasts
+  listenAdminInbox();
+  watchBanStatus();
+  setupPresence();
+  listenBroadcasts();
+  listenTaskStats();
   // Anti-multi-account & referral processing on load
   setTimeout(() => {
     checkMultiAccount();
@@ -1050,86 +1080,260 @@ function initFirebase(){
     registerReferralCode();
     listenReferrals();
     fetchReferrals();
-    // Robust boot-time ban listener - independent of UI state, survives DOM changes.
-    // This guarantees that when the control panel flips banned=false the user is
-    // reloaded INSTANTLY, even if local ST.friends.blockedReferrals was already cleared.
-    setupGlobalBanListener();
-    // Same-origin instant unban channel via localStorage (control.html writes this key).
-    setupLocalUnbanPoll();
   }, 500);
 }
 window.addEventListener('firebase-ready', () => { setTimeout(initFirebase, 300); });
 
-/* ================================ 4c0. ROBUST REAL-TIME BAN / UNBAN ================================
-   The control panel (control.html) unbans a user by writing to Firebase:
-       users/{tg_id}/banned   = false
-       users/{tg_id}/unbanned = true
-       users/{tg_id}/unbannedAt = Date.now()
-       bannedUsers/{tg_id}    = removed
-   And, for same-origin instant delivery, also writes a localStorage key:
-       cp_force_unban_{tg_id} = Date.now()
-   The listeners below pick up EITHER signal and reload the app immediately.
-   The first account on a device always stays normal; any NEW account on the
-   same device that was not explicitly unbanned by the admin gets banned again.
-   ============================================================================================= */
+/* ============ 4b2. GLOBAL CONFIG + ADMIN LIVE CHANNEL (control panel bridge) ============
+   The control panel (control.html, any device) drives every user through Firebase:
+     config/app            -> full app config, live reloaded (overrides localStorage cp_config)
+     users/{id}/inbox      -> one-shot admin commands (grant, notify, reload, reset, unban...)
+     users/{id}/banned     -> ban flag watched in real time (instant ban + instant unban)
+     users/{id}/presence   -> online status with onDisconnect
+     broadcasts/{id}       -> global/targeted announcements
+     taskStats/taskCompletions -> live task completion counters
+     payments / withdrawals / deposits / events -> finance + activity streams for the panel
+   ======================================================================================== */
+let FB_CFG = null, TASK_STATS = {}, BROADCASTS = [];
+function fbPath(path){ return window.FB.ref(window.FB.db, path); }
 
-let GLOBAL_BAN_LISTENER = false, LOCAL_UNBAN_POLL = null, BANNED_PAGE_ACTIVE = false;
-
-function setupGlobalBanListener(){
-  if (GLOBAL_BAN_LISTENER) return;
-  if (!window.FB || !FB_READY || !USER || !USER.id){ setTimeout(setupGlobalBanListener, 800); return; }
-  GLOBAL_BAN_LISTENER = true;
-  const fbId = 'tg_' + USER.id;
+/* Global config live reload - priority: Firebase config > localStorage cp_config > defaults */
+function listenGlobalConfig(){
   try{
-    // Primary signal: banned flag flips. Fire on EVERY change, not just when local state disagrees.
-    window.FB.onValue(window.FB.ref(window.FB.db, 'users/' + fbId + '/banned'), (snap) => {
-      const isBanned = snap.exists() && snap.val() === true;
-      if (isBanned && !BANNED_PAGE_ACTIVE){
-        // Banned in real-time by admin - lock the app immediately.
-        ST.friends.blockedReferrals = true;
-        ST.friends.blockedReason = 'Your account has been banned by the admin.';
-        try{ saveNow(); }catch(e){}
-        BANNED_PAGE_ACTIVE = true;
-        showMultiAccountBlock('Your account has been banned by the admin.', 'Admin ban');
-      } else if (!isBanned && BANNED_PAGE_ACTIVE){
-        // UNBANNED in real-time - clear local block and reload instantly.
-        ST.friends.blockedReferrals = false;
-        ST.friends.blockedReason = '';
-        try{ saveNow(); }catch(e){}
-        location.reload();
+    window.FB.onValue(fbPath('config/app'), (snap) => {
+      if (snap.exists()){
+        FB_CFG = snap.val();
+        const prevFields = CFG ? CFG.mining.fields : null;
+        loadConfig();
+        try{ applyPrefs(); renderTopbar(); renderNav(); }catch(e){}
+        try{
+          if (!CFG.maps.find(m => m.id === ST.mapId)) ST.mapId = CFG.maps[0].id;
+          rebuildFields(); ensureState(); closeAllTop(); go(VIEW, true); updChips(true);
+        }catch(e){}
+        checkMaintenance();
+        toast('Configuration updated by control panel', 'info', 'refresh');
       }
     });
-    // Secondary signal: unbanned flag set by control panel.
-    window.FB.onValue(window.FB.ref(window.FB.db, 'users/' + fbId + '/unbanned'), (snap) => {
-      if (snap.exists() && snap.val() === true && BANNED_PAGE_ACTIVE){
-        ST.friends.blockedReferrals = false;
-        ST.friends.blockedReason = '';
-        try{ saveNow(); }catch(e){}
-        location.reload();
-      }
-    });
-  }catch(e){ setTimeout(setupGlobalBanListener, 1500); }
+  }catch(e){ setTimeout(listenGlobalConfig, 3000); }
 }
 
-/* Same-origin instant unban: control.html on the same domain writes
-   cp_force_unban_{tgId} = timestamp. We poll it every 1.2s as a fallback
-   that works even if the Firebase realtime listener is delayed. */
-function setupLocalUnbanPoll(){
-  if (LOCAL_UNBAN_POLL) return;
-  if (!USER || !USER.id) return;
-  const key = 'cp_force_unban_' + USER.id;
-  const lastSeen = LS.get(key, 0);
-  LOCAL_UNBAN_POLL = setInterval(() => {
-    const v = LS.get(key, 0);
-    if (v && v !== lastSeen){
-      // Admin just unbanned via same-origin channel.
+/* Admin one-shot commands (balance edits, notifications, resets...) - consumed instantly */
+let ADMIN_INBOX_SEEN = {};
+function listenAdminInbox(){
+  if (!USER || !USER.id){ setTimeout(listenAdminInbox, 1500); return; }
+  try{
+    window.FB.onValue(fbPath('users/tg_' + USER.id + '/inbox'), (snap) => {
+      if (!snap.exists()) return;
+      const val = snap.val() || {};
+      Object.keys(val).forEach(k => {
+        if (ADMIN_INBOX_SEEN[k]) return;
+        ADMIN_INBOX_SEEN[k] = true;
+        const cmd = val[k];
+        try{
+          if (cmd.cmd === 'grant'){
+            const dOre = Number(cmd.ore) || 0, dGem = Number(cmd.gems) || 0, dXp = Number(cmd.xp) || 0, dTon = Number(cmd.refundTon) || 0;
+            ST.ore = Math.max(0, (ST.ore || 0) + dOre);
+            ST.gems = Math.max(0, (ST.gems || 0) + dGem);
+            ST.xp = Math.max(0, (ST.xp || 0) + dXp);
+            if (dTon) ST.earnings.refundBalance = Math.max(0, (ST.earnings.refundBalance || 0) + dTon);
+            if (cmd.setLevel) ST.level = Math.max(1, Number(cmd.setLevel) || ST.level);
+            saveNow(); updChips(true);
+            toast('Admin ' + (dOre < 0 || dGem < 0 ? 'adjusted' : 'granted') + ': ' + (dOre ? ((dOre>0?'+':'') + fmt(dOre) + ' ' + CFG.currency.ore.name + ' ') : '') + (dGem ? ((dGem>0?'+':'') + dGem + ' ' + CFG.currency.gem.name + ' ') : '') + (dTon ? ((dTon>0?'+':'') + fmtTon(dTon) + ' TON') : ''), dOre < 0 || dGem < 0 ? 'info' : 'gold', 'gift');
+          } else if (cmd.cmd === 'notify'){
+            showBroadcastModal(cmd.title || 'Message from the team', cmd.msg || '', cmd.image || '');
+          } else if (cmd.cmd === 'unban'){
+            ST.friends.blockedReferrals = false; ST.friends.blockedReason = '';
+            saveNow(); location.reload();
+          } else if (cmd.cmd === 'reload'){
+            location.reload();
+          } else if (cmd.cmd === 'reset'){
+            LS.del('cp_state');
+            try{ window.FB.set(fbPath('users/tg_' + USER.id + '/state'), null); }catch(e){}
+            location.reload();
+          } else if (cmd.cmd === 'closeSessions'){
+            /* reserved */
+          }
+        }catch(e){}
+        // consume the command so it never replays
+        try{ window.FB.set(fbPath('users/tg_' + USER.id + '/inbox/' + k), null); }catch(e){}
+      });
+    });
+  }catch(e){ setTimeout(listenAdminInbox, 3000); }
+}
+
+/* Always-on ban watcher: instant ban AND instant unban, even when the app is on any screen */
+let BAN_WATCH_ARMED = false, LAST_BANNED_STATE = null;
+function watchBanStatus(){
+  if (!USER || !USER.id){ setTimeout(watchBanStatus, 1500); return; }
+  if (BAN_WATCH_ARMED) return;
+  BAN_WATCH_ARMED = true;
+  const applyBan = (isBanned, source) => {
+    if (isBanned === LAST_BANNED_STATE) return;
+    LAST_BANNED_STATE = isBanned;
+    if (isBanned){
+      ST.friends.blockedReferrals = true;
+      ST.friends.blockedReason = source === 'multi' ? (ST.friends.blockedReason || 'Multi-account detected') : 'Your account has been banned by the admin.';
+      saveNow();
+      showMultiAccountBlock(ST.friends.blockedReason, source === 'multi' ? '' : 'Admin ban');
+    } else {
+      const wasBlocked = ST.friends.blockedReferrals || !!$('#bannedPage');
       ST.friends.blockedReferrals = false;
       ST.friends.blockedReason = '';
-      try{ saveNow(); }catch(e){}
-      try{ localStorage.removeItem(key); }catch(e){}
-      location.reload();
+      saveNow();
+      if (wasBlocked){ toast('Your account has been unbanned. Welcome back!', 'ok', 'check'); setTimeout(() => location.reload(), 450); }
     }
-  }, 1200);
+  };
+  try{
+    window.FB.onValue(fbPath('users/tg_' + USER.id + '/banned'), (snap) => {
+      applyBan(snap.exists() && snap.val() === true, 'flag');
+    });
+    window.FB.onValue(fbPath('users/tg_' + USER.id + '/unbanned'), (snap) => {
+      if (snap.exists() && snap.val() === true) applyBan(false, 'unbanned');
+    });
+    window.FB.onValue(fbPath('bannedUsers/tg_' + USER.id), (snap) => {
+      if (!snap.exists()) applyBan(false, 'removed');
+    });
+  }catch(e){ setTimeout(watchBanStatus, 3000); return; }
+  // Poll fallback for webviews where realtime listeners may drop
+  setInterval(async () => {
+    try{
+      const snap = await window.FB.get(fbPath('users/tg_' + USER.id + '/banned'));
+      const banned = snap.exists() && snap.val() === true;
+      const el = $('#unbanStatus');
+      if (el && banned) el.textContent = 'Ban status: banned. Waiting for admin unban...';
+      if (el && !banned) el.textContent = 'Unbanned! Opening the app...';
+      applyBan(banned, 'poll');
+    }catch(e){}
+  }, 5000);
+}
+
+/* Presence: real online status for the control panel */
+function setupPresence(){
+  if (!USER || !USER.id){ setTimeout(setupPresence, 1500); return; }
+  try{
+    const connRef = fbPath('.info/connected');
+    window.FB.onValue(connRef, (snap) => {
+      if (snap.val() === true){
+        const meRef = fbPath('users/tg_' + USER.id + '/presence');
+        window.FB.onDisconnect(meRef).set({ online: false, lastSeen: Date.now() }).then(() => {
+          window.FB.set(meRef, { online: true, lastSeen: Date.now(), deviceId: getDeviceId(), platform: (TG && TG.initDataUnsafe && TG.initDataUnsafe.platform) || 'web' });
+        }).catch(() => {
+          window.FB.set(meRef, { online: true, lastSeen: Date.now(), deviceId: getDeviceId() });
+        });
+      }
+    });
+    setInterval(() => {
+      try{ window.FB.update(fbPath('users/tg_' + USER.id + '/presence'), { lastSeen: Date.now(), online: true }); }catch(e){}
+    }, 45000);
+  }catch(e){}
+}
+
+/* Broadcasts: global + targeted announcements from the panel */
+function listenBroadcasts(){
+  try{
+    window.FB.onValue(fbPath('broadcasts'), (snap) => {
+      if (!snap.exists()) return;
+      const val = snap.val() || {};
+      BROADCASTS = Object.keys(val).map(k => Object.assign({ id: k }, val[k])).sort((a,b) => (b.ts||0) - (a.ts||0));
+      ST.broadcastSeen = ST.broadcastSeen || [];
+      BROADCASTS.slice(0, 15).forEach(b => {
+        if (ST.broadcastSeen.includes(b.id)) return;
+        const tgt = String(b.target || 'all');
+        // Audience filter: 'all' or named audiences resolve on-device; numeric targets are personal
+        let show = true;
+        if (/^\d+$/.test(tgt)) show = String(tgt) === String(USER && USER.id);
+        else if (tgt === 'banned') show = !!ST.friends.blockedReferrals;
+        else if (tgt === 'purchasers') show = (ST.earnings && ST.earnings.totalPurchased > 0);
+        else if (tgt === 'online') show = true;
+        if (!show) return;
+        ST.broadcastSeen.push(b.id);
+        ST.broadcastSeen = ST.broadcastSeen.slice(-60);
+        save();
+        showBroadcastModal(b.title || 'Announcement', b.msg || '', b.image || '');
+      });
+    });
+  }catch(e){ setTimeout(listenBroadcasts, 3000); }
+}
+
+function showBroadcastModal(title, msg, image){
+  openSheet('<div style="text-align:center;padding:6px 0">'
+    + '<div style="width:56px;height:56px;border-radius:50%;background:rgba(34,211,238,.1);border:1px solid rgba(34,211,238,.35);display:inline-flex;align-items:center;justify-content:center;color:var(--accent2)">'
+    + '<span style="display:inline-flex;width:26px;height:26px">' + I('megaphone') + '</span></div>'
+    + '<div class="tt mt10" style="font-size:17px">' + esc(title) + '</div>'
+    + (image ? '<img src="' + esc(image) + '" style="max-width:100%;border-radius:14px;margin-top:10px;max-height:220px;object-fit:cover" onerror="this.remove()">' : '')
+    + '<div class="note mt10" style="white-space:pre-wrap">' + esc(msg) + '</div>'
+    + '</div><button class="btn block mt10" data-act="close-top">Got it</button>');
+}
+
+/* Live task completion counters (panel shows how many users completed each task) */
+function listenTaskStats(){
+  try{
+    window.FB.onValue(fbPath('taskStats'), (snap) => {
+      TASK_STATS = snap.exists() ? snap.val() : {};
+      if (VIEW === 'tasks') go('tasks', true);
+    });
+  }catch(e){}
+}
+function fbTaskComplete(t){
+  if (!window.FB || !FB_READY || !t) return;
+  try{
+    const tid = String(t.id || uid());
+    window.FB.update(fbPath('taskStats/' + tid), { count: window.FB.increment(1), lastTs: Date.now(), title: t.title || '' });
+    if (USER && USER.id){
+      window.FB.set(fbPath('taskCompletions/' + tid + '/' + USER.id), {
+        userId: USER.id, name: USER.name || '', username: USER.username || '', photo: USER.photo || '', ts: Date.now()
+      });
+      window.FB.set(fbPath('users/tg_' + USER.id + '/taskHistory/' + tid), { title: t.title || '', ts: Date.now(), rewardOre: t.rewardOre || 0, rewardGem: t.rewardGem || 0 });
+    }
+  }catch(e){}
+}
+/* Finance + activity streams for the control panel */
+function fbPayment(rec){
+  if (!window.FB || !FB_READY) return;
+  try{
+    window.FB.set(fbPath('payments/' + rec.id), Object.assign({ userId: USER?USER.id:0, userName: USER?USER.name:'Guest', userUsername: USER?USER.username:'', ts: rec.ts, tsMs: Date.now() }, rec));
+    window.FB.update(fbPath('users/tg_' + (USER?USER.id:0) + '/payments/' + rec.id), rec);
+  }catch(e){}
+}
+function fbWithdrawal(rec){
+  if (!window.FB || !FB_READY) return;
+  try{
+    window.FB.set(fbPath('withdrawals/' + rec.id), Object.assign({ userId: USER?USER.id:0, userName: USER?USER.name:'Guest', userUsername: USER?USER.username:'', tsMs: Date.now() }, rec));
+    window.FB.update(fbPath('users/tg_' + (USER?USER.id:0) + '/withdrawals/' + rec.id), rec);
+  }catch(e){}
+}
+function fbDepositRequest(rec){
+  if (!window.FB || !FB_READY) return;
+  try{
+    window.FB.set(fbPath('deposits/' + rec.id), Object.assign({ userId: USER?USER.id:0, userName: USER?USER.name:'Guest', userUsername: USER?USER.username:'', tsMs: Date.now() }, rec));
+    window.FB.update(fbPath('users/tg_' + (USER?USER.id:0) + '/deposits/' + rec.id), rec);
+  }catch(e){}
+}
+function fbEvent(type, data){
+  if (!window.FB || !FB_READY) return;
+  try{
+    window.FB.push(fbPath('events'), { ts: Date.now(), type, userId: USER?USER.id:0, userName: USER?USER.name:'Guest', data: data || {} });
+  }catch(e){}
+}
+/* Maintenance / force-update gate */
+function checkMaintenance(){
+  try{
+    const M = CFG.maintenance || {};
+    const existing = $('#maintPage');
+    if (M.enabled && existing === null){
+      const appwrap = $('#appwrap');
+      if (!appwrap) return;
+      const d = document.createElement('div');
+      d.id = 'maintPage';
+      d.style.cssText = 'position:absolute;inset:0;z-index:10001;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:#0b0f1a;text-align:center';
+      d.innerHTML = '<div style="width:72px;height:72px;border-radius:50%;background:rgba(245,185,66,.1);border:1px solid rgba(245,185,66,.4);display:flex;align-items:center;justify-content:center;color:var(--accent);margin-bottom:16px"><span style="display:inline-flex;width:34px;height:34px">' + I('tools') + '</span></div>'
+        + '<div style="font-size:19px;font-weight:800">' + esc(M.title || 'Maintenance break') + '</div>'
+        + '<div class="note mt10" style="max-width:320px">' + esc(M.message || 'The app is being updated. Please come back in a few minutes.') + '</div>';
+      appwrap.appendChild(d);
+    } else if ((!M.enabled || M.enabled === false) && existing){
+      existing.remove();
+    }
+  }catch(e){}
 }
 
 /* ================================ 4c. ANTI-MULTI-ACCOUNT & REFERRAL SYSTEM ================================
@@ -1160,8 +1364,13 @@ function getDeviceId(){
   return did;
 }
 
-/* Multi-account check - first account stays normal, new accounts on same device get banned.
-   Unbanned users can access until they trigger multi-account again. */
+/* Multi-account check - RULES:
+   1. The FIRST account registered on a device is the owner and always stays normal.
+   2. Any NEW account that appears on a device owned by someone else gets banned instantly.
+   3. If the admin unbans a banned account, that account is whitelisted on the device
+      (persistent "unbanned" flag) and can access again IN REAL TIME.
+   4. If the user then creates yet another account on the same device, that newest account
+      is banned again - whitelisted and owner accounts are never touched. */
 async function checkMultiAccount(){
   if (!USER || !USER.id) return;
   const F = CFG.friends || {};
@@ -1169,10 +1378,10 @@ async function checkMultiAccount(){
   if (!window.FB || !FB_READY){ setTimeout(checkMultiAccount, 1500); return; }
   const deviceId = getDeviceId();
   const tgUserId = USER.id;
-  const fbUserId = 'tg_' + tgUserId;
+  const myFbId = 'tg_' + tgUserId;
   try{
-    // 1. Check ban list from control panel
-    const banSnap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/banned'));
+    // 1. Admin ban list
+    const banSnap = await window.FB.get(fbPath('users/' + myFbId + '/banned'));
     if (banSnap.exists() && banSnap.val() === true){
       ST.friends.blockedReferrals = true;
       ST.friends.blockedReason = 'Your account has been banned by the admin.';
@@ -1180,65 +1389,56 @@ async function checkMultiAccount(){
       showMultiAccountBlock('Your account has been banned by the admin.', 'Admin ban');
       return;
     }
+    // 2. Admin-unbanned accounts are whitelisted on this device (can always come back)
+    const unbanSnap = await window.FB.get(fbPath('users/' + myFbId + '/unbanned'));
+    const isWhitelisted = unbanSnap.exists() && unbanSnap.val() === true;
 
-    // 2. Check if user was previously unbanned (skip device check for them)
-    const unbanSnap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/unbanned'));
-    const isUnbanned = unbanSnap.exists() && unbanSnap.val() === true;
-
-    // 3. Check device -> user: is this device already used by another Telegram account?
-    if (!isUnbanned){
-      const devSnap = await window.FB.get(window.FB.ref(window.FB.db, 'devices/' + deviceId));
-      if (devSnap.exists()){
-        const devData = devSnap.val();
-        const existingUser = devData.userId;
-        if (existingUser && existingUser !== fbUserId){
-          // MULTI-ACCOUNT: This device belongs to another account (the first/original account)
-          // The NEW account (current user) gets banned. The FIRST account stays normal.
-          ST.friends.blockedReferrals = true;
-          ST.friends.blockedReason = 'This device is already linked to another account.';
-          save();
-          window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/banned'), true);
-          window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/multiAccount'), {
-            deviceUsedBy: existingUser, detectedAt: Date.now(), deviceId: deviceId, tgUserId: tgUserId
-          });
-          window.FB.set(window.FB.ref(window.FB.db, 'bannedUsers/' + fbUserId), {
-            reason: 'multi_account_same_device', deviceId: deviceId, originalAccount: existingUser,
-            detectedAt: Date.now(), tgUserId: tgUserId, userName: USER.name || ''
-          });
-          showMultiAccountBlock('This device is already linked to another account. Multi-accounting is not allowed.', existingUser);
-          return;
-        }
-        // Same user on same device - just update lastSeen (first account stays normal)
-        window.FB.set(window.FB.ref(window.FB.db, 'devices/' + deviceId), {
-          userId: fbUserId, tgUserId: tgUserId, userName: USER.name || '',
-          firstSeen: devData.firstSeen || Date.now(), lastSeen: Date.now()
+    // 3. Device ownership check
+    const devSnap = await window.FB.get(fbPath('devices/' + deviceId));
+    if (devSnap.exists()){
+      const devData = devSnap.val() || {};
+      const owner = devData.userId;
+      if (owner && owner !== myFbId && !isWhitelisted){
+        // NEW ACCOUNT ON ANOTHER ACCOUNT'S DEVICE -> ban this newest account only.
+        ST.friends.blockedReferrals = true;
+        ST.friends.blockedReason = 'This device is already linked to another account.';
+        save();
+        const banInfo = {
+          reason: 'multi_account_same_device', deviceId: deviceId, originalAccount: owner,
+          detectedAt: Date.now(), tgUserId: tgUserId, userName: USER.name || '',
+          username: USER.username || '', unbanned: false
+        };
+        window.FB.set(fbPath('users/' + myFbId + '/banned'), true);
+        window.FB.set(fbPath('users/' + myFbId + '/multiAccount'), {
+          deviceUsedBy: owner, detectedAt: Date.now(), deviceId: deviceId, tgUserId: tgUserId
         });
-      } else {
-        // New device - register it
-        window.FB.set(window.FB.ref(window.FB.db, 'devices/' + deviceId), {
-          userId: fbUserId, tgUserId: tgUserId, userName: USER.name || '',
-          firstSeen: Date.now(), lastSeen: Date.now()
-        });
-        window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/deviceId'), deviceId);
+        window.FB.set(fbPath('bannedUsers/' + myFbId), banInfo);
+        fbEvent('multi_account_ban', { deviceId, owner, tgUserId });
+        showMultiAccountBlock('This device is already linked to another account. Multi-accounting is not allowed.', owner);
+        return;
       }
+      // Owner / whitelisted account -> keep device record fresh
+      window.FB.update(fbPath('devices/' + deviceId), {
+        userId: owner || myFbId, tgUserId: owner ? devData.tgUserId : tgUserId,
+        ownerName: devData.ownerName || (owner === myFbId ? (USER.name || '') : (devData.ownerName || '')),
+        lastUser: myFbId, lastSeen: Date.now(),
+        firstSeen: devData.firstSeen || Date.now()
+      });
+    } else {
+      // Brand new device -> this account becomes the owner
+      window.FB.set(fbPath('devices/' + deviceId), {
+        userId: myFbId, tgUserId: tgUserId, ownerName: USER.name || '',
+        firstSeen: Date.now(), lastSeen: Date.now(), lastUser: myFbId
+      });
     }
-
-    // 4. All clear - user is either the first account, or was unbanned
+    // 4. All clear - register profile + presence
     const wasBlocked = ST.friends.blockedReferrals;
     ST.friends.blockedReferrals = false;
     ST.friends.blockedReason = '';
     save();
-    // For unbanned users: keep the unbanned flag (persistent) so they can always access
-    if (!isUnbanned){
-      window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/deviceId'), deviceId);
-    }
-    window.FB.set(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/online'), {
-      online: true, lastSeen: Date.now(), deviceId: deviceId
-    });
-    // If user was previously blocked but now cleared, reload to show the app
-    if (wasBlocked){
-      location.reload();
-    }
+    window.FB.set(fbPath('users/' + myFbId + '/deviceId'), deviceId);
+    window.FB.set(fbPath('users/' + myFbId + '/online'), { online: true, lastSeen: Date.now(), deviceId: deviceId });
+    if (wasBlocked){ location.reload(); }
   }catch(e){
     setTimeout(checkMultiAccount, 2000);
   }
@@ -1248,7 +1448,6 @@ async function checkMultiAccount(){
 function showMultiAccountBlock(reason, otherAccount){
   ST.friends.blockedReferrals = true;
   ST.friends.blockedReason = reason || 'Multi-account detected';
-  BANNED_PAGE_ACTIVE = true;
   save();
   const supportUser = CFG.app.supportUsername || 'deepshaftOG_Support';
   const deviceId = getDeviceId();
@@ -1315,48 +1514,28 @@ function setupUnbanListener(){
   }
 }
 
-/* Manual unban check via fetch as fallback (for when Firebase listener isn't working).
-   Polls every 2 seconds AND checks the same-origin localStorage unban channel so an
-   admin unban from control.html lands instantly even if the realtime listener missed it. */
+/* Manual unban check via fetch as fallback (for when Firebase listener isn't working) */
 let MANUAL_UNBAN_INTERVAL = null;
 function manualUnbanCheck(){
   if (MANUAL_UNBAN_INTERVAL) return; // Already running
   if (!USER || !USER.id) return;
-  const localKey = 'cp_force_unban_' + USER.id;
-  let lastLocal = LS.get(localKey, 0);
   MANUAL_UNBAN_INTERVAL = setInterval(async () => {
-    // 1. Same-origin instant channel
-    const lv = LS.get(localKey, 0);
-    if (lv && lv !== lastLocal){
-      ST.friends.blockedReferrals = false;
-      ST.friends.blockedReason = '';
-      try{ saveNow(); }catch(e){}
-      try{ localStorage.removeItem(localKey); }catch(e){}
-      clearInterval(MANUAL_UNBAN_INTERVAL);
-      location.reload();
-      return;
-    }
-    // 2. Firebase poll
     if (window.FB && FB_READY){
       try{
-        const fbId = 'tg_' + USER.id;
-        const banSnap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + fbId + '/banned'));
-        const banned = banSnap.exists() && banSnap.val() === true;
-        const unbanSnap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + fbId + '/unbanned'));
-        const unbanned = unbanSnap.exists() && unbanSnap.val() === true;
-        if (!banned || unbanned){
+        const snap = await window.FB.get(window.FB.ref(window.FB.db, 'users/tg_' + USER.id + '/banned'));
+        const banned = snap.exists() && snap.val() === true;
+        if (!banned){
           ST.friends.blockedReferrals = false;
           ST.friends.blockedReason = '';
-          try{ saveNow(); }catch(e){}
+          saveNow();
           clearInterval(MANUAL_UNBAN_INTERVAL);
           location.reload();
-          return;
         }
         const el = $('#unbanStatus');
-        if (el) el.textContent = 'Ban status: Banned. Waiting for admin unban...';
+        if (el) el.textContent = 'Ban status: ' + (banned ? 'Banned' : 'Unbanned! Reloading...');
       }catch(e){}
     }
-  }, 2000); // Check every 2 seconds for near-instant unban delivery
+  }, 5000); // Check every 5 seconds
 }
 
 /* Process referral during loading screen - ONLY uses start_param, shows welcome ONCE */
@@ -1524,32 +1703,7 @@ function listenReferrals(){
         REFERRALS_LIST = [];
       }
     });
-    // Listen for ban/unban changes in real-time
-    window.FB.onValue(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/banned'), (snap) => {
-      const isBanned = snap.exists() && snap.val() === true;
-      if (isBanned && !ST.friends.blockedReferrals){
-        // BANNED in real-time
-        ST.friends.blockedReferrals = true;
-        ST.friends.blockedReason = 'Your account has been banned by the admin.';
-        save();
-        showMultiAccountBlock('Your account has been banned by the admin.', 'Admin ban');
-      } else if (!isBanned && ST.friends.blockedReferrals){
-        // UNBANNED in real-time - reload the app
-        ST.friends.blockedReferrals = false;
-        ST.friends.blockedReason = '';
-        saveNow();
-        location.reload();
-      }
-    });
-    // Also listen for unbanned flag
-    window.FB.onValue(window.FB.ref(window.FB.db, 'users/' + fbUserId + '/unbanned'), (snap) => {
-      if (snap.exists() && snap.val() === true && ST.friends.blockedReferrals){
-        ST.friends.blockedReferrals = false;
-        ST.friends.blockedReason = '';
-        saveNow();
-        location.reload();
-      }
-    });
+    /* Ban / unban watching is centralized in watchBanStatus() (always-on, covers all screens) */
   }catch(e){}
 }
 
@@ -1568,7 +1722,7 @@ async function checkChannelSubscription(channelUsername, userId){
   const apiUrl = 'https://api.telegram.org/bot' + token + '/getChatMember?chat_id=@' + channelUsername + '&user_id=' + userId;
   // Try direct fetch first (works in some Telegram WebViews)
   try{
-    const resp = await fetch(apiUrl, { signal: AbortSignal.timeout(8000) });
+    const resp = await fetch(apiUrl, { signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(8000) : undefined });
     if (resp.ok){
       const data = await resp.json();
       if (data.ok && data.result){
@@ -1580,7 +1734,7 @@ async function checkChannelSubscription(channelUsername, userId){
   // Fallback: try CORS proxy
   try{
     const proxyUrl = 'https://corsproxy.io/?url=' + encodeURIComponent(apiUrl);
-    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+    const resp = await fetch(proxyUrl, { signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(8000) : undefined });
     if (resp.ok){
       const data = await resp.json();
       if (data.ok && data.result){
@@ -1592,7 +1746,7 @@ async function checkChannelSubscription(channelUsername, userId){
   // Second fallback: allorigins
   try{
     const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(apiUrl);
-    const resp = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+    const resp = await fetch(proxyUrl, { signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(8000) : undefined });
     if (resp.ok){
       const data = await resp.json();
       if (data.ok && data.result){
@@ -1884,7 +2038,9 @@ const ICONS = {
   cart: '<path d="M3 11h18l-2 7H5z"/><path d="m6 11 2.5-5h7L18 11"/><path d="M12 6v5"/>',
   lamp: '<path d="M9 3h6l1 6H8z"/><path d="M12 9v7"/><path d="M8 21a4 4 0 0 1 8 0z"/><path d="M12 16v2"/>',
   bolt: '<path d="M13 2 4 14h6l-1 8 9-12h-6z"/>',
-  history: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/>'
+  history: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/>',
+  megaphone: '<path d="m3 11 18-8-8 18-2.5-7.5z"/><path d="M11.5 13.5 8 17"/><path d="M6 16c-1.5 1.5-2 4-2 4s2.5-.5 4-2"/>',
+  tools: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4L15 12l-3-3z"/>'
 };
 function I(n, cls){
   return '<svg class="ic ' + (cls||'') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (ICONS[n]||ICONS.info) + '</svg>';
@@ -2421,12 +2577,18 @@ function taskState(t){
   const stt = ST.tasks[t.id] || {};
   const now = Date.now();
   const vd = (CFG.tasksCfg.verifySec || 10) * 1000;
+  // Global completion cap (set by control panel) + per-user limit
+  const globalCount = (TASK_STATS[t.id] && TASK_STATS[t.id].count) || 0;
+  if (t.maxCompletions > 0 && globalCount >= t.maxCompletions && !(stt.count > 0 || stt.done)) return { mode:'capped' };
+  const perUser = Math.max(1, t.limitPerUser|0 || 1);
+  const myCount = stt.count || (stt.done ? 1 : 0);
+  if (myCount >= perUser && !(t.type === 'daily' || (t.cooldownH|0) > 0)) return { mode:'done' };
   if (t.type === 'daily' || (t.cooldownH|0) > 0){
     const cd = (t.type === 'daily' ? 24 : (t.cooldownH|0)) * 3600 * 1000;
     const ready = !stt.last || now - stt.last >= cd;
     return { mode: ready ? 'claim' : 'wait', cdUntil: (stt.last||0) + cd, label: ready ? 'Claim' : 'Ready in' };
   }
-  if (stt.done) return { mode:'done' };
+  if (stt.done || myCount >= perUser) return { mode:'done' };
   if (!stt.start) return { mode:'start' };
   if (now - stt.start < vd) return { mode:'verify', cdUntil: stt.start + vd };
   return { mode:'claim' };
@@ -2441,19 +2603,25 @@ function rTasks(){
   + '<div class="stitle">Missions<span class="st-x">' + list.length + ' available</span></div>'
   + (list.length ? list.map(t => {
       const ts = taskState(t);
+      const gCount = (TASK_STATS[t.id] && TASK_STATS[t.id].count) || 0;
+      const capTxt = t.maxCompletions > 0 ? ' - ' + fmt(gCount) + '/' + fmt(t.maxCompletions) + ' done' : (gCount ? ' - ' + fmt(gCount) + ' done' : '');
       let btn = '';
-      if (ts.mode === 'start') btn = '<button class="btn sm" data-act="task-start" data-id="' + t.id + '">' + I('ext') + 'Start</button>';
+      if (ts.mode === 'capped') btn = '<span class="wtag" style="color:var(--mut)">' + I('lock') + ' Limit reached</span>';
+      else if (ts.mode === 'start') btn = '<button class="btn sm" data-act="task-start" data-id="' + t.id + '">' + I('ext') + 'Start</button>';
       else if (ts.mode === 'verify') btn = '<button class="btn sm ghost" disabled>' + I('clock') + '<span data-cd="' + ts.cdUntil + '">--</span></button>';
       else if (ts.mode === 'claim') btn = '<button class="btn sm pulse" data-act="task-claim" data-id="' + t.id + '">' + I('gift') + 'Claim</button>';
       else if (ts.mode === 'wait') btn = '<button class="btn sm ghost" disabled>' + I('clock') + '<span data-cd="' + ts.cdUntil + '">--</span></button>';
       else btn = '<span class="wtag" style="color:var(--good);border-color:rgba(52,211,153,.4)">' + I('check') + ' Done</span>';
+      const iconHtml = t.logo ? '<img src="' + esc(t.logo) + '" style="width:100%;height:100%;object-fit:cover;border-radius:12px" onerror="this.remove()">' : I(TASK_ICON[t.type] || 'link');
       return '<div class="card tcard">'
-        + '<div class="ticon">' + I(TASK_ICON[t.type] || 'link') + '</div>'
+        + '<div class="ticon">' + iconHtml + '</div>'
         + '<div class="tmain"><div class="tt">' + esc(t.title) + '</div>'
-        + '<div class="td">' + esc(t.desc || '') + '</div>'
+        + (t.photo ? '<img src="' + esc(t.photo) + '" style="width:100%;max-height:110px;object-fit:cover;border-radius:10px;margin-top:6px" onerror="this.remove()">' : '')
+        + '<div class="td">' + esc(t.desc || '') + (capTxt ? '<span class="mut"> ' + capTxt + '</span>' : '') + '</div>'
         + '<div class="trew">'
           + (t.rewardOre ? '<span class="rchip">' + I('ore') + '+' + fmt(t.rewardOre) + ' ' + O + '</span>' : '')
           + (t.rewardGem ? '<span class="rchip gemc">' + I('gem') + '+' + t.rewardGem + ' ' + G + '</span>' : '')
+          + (t.rewardTon ? '<span class="rchip tonc">' + I('ton') + '+' + fmtTon(t.rewardTon) + ' TON</span>' : '')
         + '</div></div>'
         + '<div class="tside">' + btn + '</div>'
       + '</div>';
@@ -2775,11 +2943,25 @@ PAGES.wallet = function(){
   : '')
 
   + (CFG.economy.deposit && CFG.economy.deposit.enabled !== false
-  ? '<div class="stitle">Deposit address</div>'
-  + '<div class="card"><div class="note mb10">Send TON to the project address for manual top-ups. Include your user ID <b class="num">' + (USER ? USER.id : 0) + '</b> in the comment.</div>'
+  ? '<div class="stitle">Deposit TON</div>'
+  + '<div class="card"><div class="note mb10">Send TON to the project address, then submit the transaction hash below. Include your user ID <b class="num">' + (USER ? USER.id : 0) + '</b> in the comment. 1 TON = ' + fmt(rate) + ' ' + O + '.</div>'
     + '<div class="codebox">' + esc(CFG.economy.deposit.address) + '</div>'
-    + '<button class="btn sm ghost block mt10" data-act="copy" data-copy="' + esc(CFG.economy.deposit.address) + '">' + I('copy') + 'Copy address</button>'
-  + '</div>' : '')
+    + '<div class="row mt10"><button class="btn sm ghost" data-act="copy" data-copy="' + esc(CFG.economy.deposit.address) + '">' + I('copy') + 'Copy address</button>'
+    + (connected ? '<button class="btn sm tonb" data-act="dep-connect-send">' + I('ton') + 'Send via wallet</button>' : '') + '</div>'
+    + '<label class="lb mt10">Amount deposited (TON)</label>'
+    + '<input class="inp num" id="depAmt" type="number" inputmode="decimal" placeholder="0">'
+    + '<label class="lb">Transaction hash or comment</label>'
+    + '<input class="inp" id="depTx" placeholder="Paste your TON transaction hash" spellcheck="false">'
+    + '<div class="wrow divd mt10"><span class="mut">You will receive (after review)</span><b class="num" id="depGet" style="color:var(--good)">0 ' + O + '</b></div>'
+    + '<button class="btn block mt10" data-act="dep-submit">' + I('send') + 'Submit deposit for review</button>'
+  + '</div>'
+  + (ST.dep && ST.dep.length ? '<div class="stitle">My deposits</div>' + ST.dep.slice(0,8).map(dp =>
+      '<div class="card row mb10" style="padding:11px 14px"><div class="grow">'
+      + '<div class="tt sm num">' + fmtTon(dp.amountTon) + ' TON</div>'
+      + '<div class="td mut xs">' + shortAddr(dp.txHash || '') + ' - ' + new Date(dp.ts).toLocaleDateString() + '</div></div>'
+      + '<span class="wtag" style="color:' + (dp.status === 'verified' ? 'var(--good)' : dp.status === 'rejected' ? 'var(--bad)' : 'var(--accent)') + ';border-color:currentColor">' + esc(dp.status || 'pending') + '</span></div>'
+    ).join('') : '')
+  : '')
 
   + (earningsCfg().enabled !== false ? earningsWalletSection() : '');
 };
@@ -2883,16 +3065,27 @@ function swapHistory(item, note){
   LS.set('cp_events', arr.slice(0, 200));
 }
 function bindWdCalc(){
-  const amt = $('#wdAmt'); if (!amt) return;
-  const upd = () => {
-    const v = Math.max(0, Number(amt.value)||0);
-    const fee = v * (CFG.economy.withdraw.feePercent||0) / 100;
-    const get = (v - fee) / (CFG.economy.orePerTon||1);
-    const f = $('#wdFee'), g = $('#wdGet');
-    if (f) f.textContent = fmt(fee) + ' ' + CFG.currency.ore.name;
-    if (g) g.textContent = fmtTon(get) + ' TON';
-  };
-  amt.addEventListener('input', upd); upd();
+  const amt = $('#wdAmt');
+  if (amt){
+    const upd = () => {
+      const v = Math.max(0, Number(amt.value)||0);
+      const fee = v * (CFG.economy.withdraw.feePercent||0) / 100;
+      const get = (v - fee) / (CFG.economy.orePerTon||1);
+      const f = $('#wdFee'), g = $('#wdGet');
+      if (f) f.textContent = fmt(fee) + ' ' + CFG.currency.ore.name;
+      if (g) g.textContent = fmtTon(get) + ' TON';
+    };
+    amt.addEventListener('input', upd); upd();
+  }
+  const dep = $('#depAmt');
+  if (dep){
+    const updD = () => {
+      const v = Math.max(0, Number(dep.value)||0);
+      const g = $('#depGet');
+      if (g) g.textContent = fmt(v * (CFG.economy.orePerTon||1)) + ' ' + CFG.currency.ore.name;
+    };
+    dep.addEventListener('input', updD); updD();
+  }
 }
 
 PAGES.history = function(){
@@ -3304,21 +3497,28 @@ const ACT = {
     const t = CFG.tasks.find(x => x.id === d.id); if (!t) return;
     const stt = ST.tasks[t.id] || (ST.tasks[t.id] = {});
     const now = Date.now();
+    const globalCount = (TASK_STATS[t.id] && TASK_STATS[t.id].count) || 0;
+    if (t.maxCompletions > 0 && globalCount >= t.maxCompletions && !(stt.count > 0 || stt.done)){ toast('This task has reached its completion limit', 'info'); return; }
     if (t.type === 'daily' || (t.cooldownH|0) > 0){
       const cd = (t.type === 'daily' ? 24 : (t.cooldownH|0)) * 3600 * 1000;
       if (stt.last && now - stt.last < cd) return;
       stt.last = now;
+      stt.count = (stt.count || 0) + 1;
     } else {
       const vd = (CFG.tasksCfg.verifySec || 10) * 1000;
       if (!stt.start || stt.done || now - stt.start < vd) return;
       stt.done = true;
+      stt.count = (stt.count || 0) + 1;
     }
     if (t.rewardOre){ ST.ore += t.rewardOre; ST.stats.mined += t.rewardOre; }
     if (t.rewardGem) ST.gems += t.rewardGem;
+    if (t.rewardTon){ ST.earnings.refundBalance = (ST.earnings.refundBalance || 0) + t.rewardTon; }
     ST.stats.tasks++;
+    fbTaskComplete(t);
+    logEvent('task_complete', { taskId: t.id, title: t.title || '', rewardOre: t.rewardOre || 0, rewardGem: t.rewardGem || 0 });
     save(); hapOk(); sfx('buy');
     confettiEl(el, 46);
-    toast('Reward claimed: +' + fmt(t.rewardOre||0) + ' ' + CFG.currency.ore.name + (t.rewardGem ? ' +' + t.rewardGem + ' ' + CFG.currency.gem.name : ''), 'gold', 'gift');
+    toast('Reward claimed: +' + fmt(t.rewardOre||0) + ' ' + CFG.currency.ore.name + (t.rewardGem ? ' +' + t.rewardGem + ' ' + CFG.currency.gem.name : '') + (t.rewardTon ? ' +' + fmtTon(t.rewardTon) + ' TON' : ''), 'gold', 'gift');
     renderNav(); go('tasks', true); checkAch();
   },
   /* mine interactions */
@@ -3434,6 +3634,7 @@ const ACT = {
     const rec = { id: uid(), ts: Date.now(), userId: USER?USER.id:0, userName: USER?USER.name:'Guest', address: addr, amountOre: amt, fee: Math.round(fee), amountTon: (amt-fee)/(CFG.economy.orePerTon||1), status:'pending' };
     ST.wd.unshift(rec); ST.wd = ST.wd.slice(0, 30);
     const arr = LS.get('cp_withdrawals', []); arr.unshift(rec); LS.set('cp_withdrawals', arr.slice(0, 300));
+    fbWithdrawal(rec);
     logEvent('withdrawal', rec);
     sfx('ok'); hapOk(); confettiEl(el, 40);
     toast('Withdrawal request submitted', 'ok', 'check');
@@ -3464,10 +3665,49 @@ const ACT = {
     ST.wd.unshift(rec); ST.wd = ST.wd.slice(0, 30);
     ST.earnings.refundBalance = 0;
     const arr = LS.get('cp_withdrawals', []); arr.unshift(rec); LS.set('cp_withdrawals', arr.slice(0, 300));
+    fbWithdrawal(rec);
     logEvent('refund_withdrawal', rec);
     sfx('ok'); hapOk(); confettiEl(el, 40);
     toast('Refund withdrawal submitted: ' + fmtTon(bal) + ' TON', 'ok', 'check');
     save(); closeAllTop(); openPage('wallet');
+  },
+  /* DEPOSIT: submit manual deposit request for admin review */
+  'dep-submit': (d, el) => {
+    if (CFG.economy.deposit && CFG.economy.deposit.enabled === false){ toast('Deposits are currently disabled', 'info'); return; }
+    const amt = Math.max(0, Number(($('#depAmt')||{}).value) || 0);
+    const tx = (($('#depTx')||{}).value || '').trim();
+    if (amt <= 0){ toast('Enter the TON amount you deposited', 'err'); sfx('err'); return; }
+    if (amt > 100000){ toast('Amount looks invalid', 'err'); sfx('err'); return; }
+    if (tx.length < 8){ toast('Paste your transaction hash so the team can verify', 'err'); sfx('err'); return; }
+    const rec = { id: uid(), ts: Date.now(), userId: USER?USER.id:0, userName: USER?USER.name:'Guest', userUsername: USER?USER.username:'',
+      amountTon: amt, txHash: tx, address: (CFG.economy.deposit && CFG.economy.deposit.address) || '', status: 'pending', type: 'deposit' };
+    ST.dep = ST.dep || [];
+    ST.dep.unshift(rec); ST.dep = ST.dep.slice(0, 30);
+    fbDepositRequest(rec);
+    logEvent('deposit_request', rec);
+    sfx('ok'); hapOk();
+    toast('Deposit submitted - the team will verify it shortly', 'ok', 'clock');
+    save(); closeAllTop(); openPage('wallet');
+  },
+  'dep-connect-send': async (d, el) => {
+    try{
+      const depAddr = (CFG.economy.deposit && CFG.economy.deposit.address) || (CFG.payments.direct && CFG.payments.direct.address);
+      const amt = Number(($('#depAmt')||{}).value) || 0;
+      if (amt <= 0){ toast('Enter the amount first', 'err'); return; }
+      await sendTonTo(amt, depAddr, 'deposit_' + (USER ? USER.id : 'anon'));
+      const tx = (($('#depTx')||{}).value || '').trim() || 'tonconnect-' + Date.now();
+      const rec = { id: uid(), ts: Date.now(), userId: USER?USER.id:0, userName: USER?USER.name:'Guest', userUsername: USER?USER.username:'',
+        amountTon: amt, txHash: tx, address: depAddr || '', status: 'pending', type: 'deposit' };
+      ST.dep = ST.dep || [];
+      ST.dep.unshift(rec); ST.dep = ST.dep.slice(0, 30);
+      fbDepositRequest(rec);
+      logEvent('deposit_request', rec);
+      toast('Deposit sent - waiting for network confirmation', 'gold', 'check');
+      save(); closeAllTop(); openPage('wallet');
+    }catch(e){
+      if (String(e && e.message).toLowerCase().includes('not connected')){}
+      else toast(e && e.message ? e.message : 'Deposit canceled', 'err');
+    }
   },
   'wc-connect': async () => {
     try{
@@ -3590,6 +3830,7 @@ function logEvent(type, data){
   const arr = LS.get('cp_events', []);
   arr.unshift({ ts: Date.now(), type, userId: USER?USER.id:0, userName: USER?USER.name:'Guest', data });
   LS.set('cp_events', arr.slice(0, 200));
+  fbEvent(type, data);
 }
 
 /* ================================ 16. ENGINE ================================== */
@@ -3841,14 +4082,19 @@ async function fetchTonBalance(addr){
   }catch(e){ return null; }
 }
 async function sendTon(amountTon, comment){
+  return sendTonTo(amountTon, (CFG.payments.direct && CFG.payments.direct.address) || '', comment);
+}
+/* Send TON to an arbitrary address (used for deposits via wallet) */
+async function sendTonTo(amountTon, address, comment){
   const c = await ensureTC();
   if (!c.connected){ await c.connectWallet(); }
   if (!c.connected) throw new Error('Wallet not connected');
+  if (!address) throw new Error('Deposit address is not configured');
   const nano = BigInt(Math.round((Number(amountTon)||0) * 1e9)).toString();
-  const msg = { address: CFG.payments.direct.address, amount: nano };
-  // Include miner ID + user ID as transaction comment/memo
+  const msg = { address: address, amount: nano };
   if (comment){
-    msg.payload = await encodeTonComment(comment);
+    const p = await encodeTonComment(comment);
+    if (p) msg.payload = p;
   }
   const tx = { validUntil: Math.floor(Date.now()/1000) + 600, messages: [msg] };
   return await c.sendTransaction(tx);
@@ -3877,6 +4123,7 @@ function recordPay(pm, method, amountTon, extra){
     status: extra.status || 'pending', txHash: extra.txHash || '', note: extra.note || '' };
   ST.pay.unshift(rec); ST.pay = ST.pay.slice(0, 50);
   const arr = LS.get('cp_payments', []); arr.unshift(rec); LS.set('cp_payments', arr.slice(0, 300));
+  fbPayment(rec);
   logEvent('purchase', rec);
   return rec;
 }
@@ -4205,6 +4452,7 @@ function boot(){
   renderNav();
   updChips(true);
   go('mine');
+  checkMaintenance();
   setInterval(tick, clamp(CFG.mining.tickMs||1000, 200, 5000));
   requestAnimationFrame(raf);
   setInterval(() => { ST.lastSeen = Date.now(); save(); }, 10000);
