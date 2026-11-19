@@ -1050,9 +1050,87 @@ function initFirebase(){
     registerReferralCode();
     listenReferrals();
     fetchReferrals();
+    // Robust boot-time ban listener - independent of UI state, survives DOM changes.
+    // This guarantees that when the control panel flips banned=false the user is
+    // reloaded INSTANTLY, even if local ST.friends.blockedReferrals was already cleared.
+    setupGlobalBanListener();
+    // Same-origin instant unban channel via localStorage (control.html writes this key).
+    setupLocalUnbanPoll();
   }, 500);
 }
 window.addEventListener('firebase-ready', () => { setTimeout(initFirebase, 300); });
+
+/* ================================ 4c0. ROBUST REAL-TIME BAN / UNBAN ================================
+   The control panel (control.html) unbans a user by writing to Firebase:
+       users/{tg_id}/banned   = false
+       users/{tg_id}/unbanned = true
+       users/{tg_id}/unbannedAt = Date.now()
+       bannedUsers/{tg_id}    = removed
+   And, for same-origin instant delivery, also writes a localStorage key:
+       cp_force_unban_{tg_id} = Date.now()
+   The listeners below pick up EITHER signal and reload the app immediately.
+   The first account on a device always stays normal; any NEW account on the
+   same device that was not explicitly unbanned by the admin gets banned again.
+   ============================================================================================= */
+
+let GLOBAL_BAN_LISTENER = false, LOCAL_UNBAN_POLL = null, BANNED_PAGE_ACTIVE = false;
+
+function setupGlobalBanListener(){
+  if (GLOBAL_BAN_LISTENER) return;
+  if (!window.FB || !FB_READY || !USER || !USER.id){ setTimeout(setupGlobalBanListener, 800); return; }
+  GLOBAL_BAN_LISTENER = true;
+  const fbId = 'tg_' + USER.id;
+  try{
+    // Primary signal: banned flag flips. Fire on EVERY change, not just when local state disagrees.
+    window.FB.onValue(window.FB.ref(window.FB.db, 'users/' + fbId + '/banned'), (snap) => {
+      const isBanned = snap.exists() && snap.val() === true;
+      if (isBanned && !BANNED_PAGE_ACTIVE){
+        // Banned in real-time by admin - lock the app immediately.
+        ST.friends.blockedReferrals = true;
+        ST.friends.blockedReason = 'Your account has been banned by the admin.';
+        try{ saveNow(); }catch(e){}
+        BANNED_PAGE_ACTIVE = true;
+        showMultiAccountBlock('Your account has been banned by the admin.', 'Admin ban');
+      } else if (!isBanned && BANNED_PAGE_ACTIVE){
+        // UNBANNED in real-time - clear local block and reload instantly.
+        ST.friends.blockedReferrals = false;
+        ST.friends.blockedReason = '';
+        try{ saveNow(); }catch(e){}
+        location.reload();
+      }
+    });
+    // Secondary signal: unbanned flag set by control panel.
+    window.FB.onValue(window.FB.ref(window.FB.db, 'users/' + fbId + '/unbanned'), (snap) => {
+      if (snap.exists() && snap.val() === true && BANNED_PAGE_ACTIVE){
+        ST.friends.blockedReferrals = false;
+        ST.friends.blockedReason = '';
+        try{ saveNow(); }catch(e){}
+        location.reload();
+      }
+    });
+  }catch(e){ setTimeout(setupGlobalBanListener, 1500); }
+}
+
+/* Same-origin instant unban: control.html on the same domain writes
+   cp_force_unban_{tgId} = timestamp. We poll it every 1.2s as a fallback
+   that works even if the Firebase realtime listener is delayed. */
+function setupLocalUnbanPoll(){
+  if (LOCAL_UNBAN_POLL) return;
+  if (!USER || !USER.id) return;
+  const key = 'cp_force_unban_' + USER.id;
+  const lastSeen = LS.get(key, 0);
+  LOCAL_UNBAN_POLL = setInterval(() => {
+    const v = LS.get(key, 0);
+    if (v && v !== lastSeen){
+      // Admin just unbanned via same-origin channel.
+      ST.friends.blockedReferrals = false;
+      ST.friends.blockedReason = '';
+      try{ saveNow(); }catch(e){}
+      try{ localStorage.removeItem(key); }catch(e){}
+      location.reload();
+    }
+  }, 1200);
+}
 
 /* ================================ 4c. ANTI-MULTI-ACCOUNT & REFERRAL SYSTEM ================================
    RULE: One account per device. Multi-account on same device = blocked referrals.
@@ -1170,6 +1248,7 @@ async function checkMultiAccount(){
 function showMultiAccountBlock(reason, otherAccount){
   ST.friends.blockedReferrals = true;
   ST.friends.blockedReason = reason || 'Multi-account detected';
+  BANNED_PAGE_ACTIVE = true;
   save();
   const supportUser = CFG.app.supportUsername || 'deepshaftOG_Support';
   const deviceId = getDeviceId();
@@ -1236,28 +1315,48 @@ function setupUnbanListener(){
   }
 }
 
-/* Manual unban check via fetch as fallback (for when Firebase listener isn't working) */
+/* Manual unban check via fetch as fallback (for when Firebase listener isn't working).
+   Polls every 2 seconds AND checks the same-origin localStorage unban channel so an
+   admin unban from control.html lands instantly even if the realtime listener missed it. */
 let MANUAL_UNBAN_INTERVAL = null;
 function manualUnbanCheck(){
   if (MANUAL_UNBAN_INTERVAL) return; // Already running
   if (!USER || !USER.id) return;
+  const localKey = 'cp_force_unban_' + USER.id;
+  let lastLocal = LS.get(localKey, 0);
   MANUAL_UNBAN_INTERVAL = setInterval(async () => {
+    // 1. Same-origin instant channel
+    const lv = LS.get(localKey, 0);
+    if (lv && lv !== lastLocal){
+      ST.friends.blockedReferrals = false;
+      ST.friends.blockedReason = '';
+      try{ saveNow(); }catch(e){}
+      try{ localStorage.removeItem(localKey); }catch(e){}
+      clearInterval(MANUAL_UNBAN_INTERVAL);
+      location.reload();
+      return;
+    }
+    // 2. Firebase poll
     if (window.FB && FB_READY){
       try{
-        const snap = await window.FB.get(window.FB.ref(window.FB.db, 'users/tg_' + USER.id + '/banned'));
-        const banned = snap.exists() && snap.val() === true;
-        if (!banned){
+        const fbId = 'tg_' + USER.id;
+        const banSnap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + fbId + '/banned'));
+        const banned = banSnap.exists() && banSnap.val() === true;
+        const unbanSnap = await window.FB.get(window.FB.ref(window.FB.db, 'users/' + fbId + '/unbanned'));
+        const unbanned = unbanSnap.exists() && unbanSnap.val() === true;
+        if (!banned || unbanned){
           ST.friends.blockedReferrals = false;
           ST.friends.blockedReason = '';
-          saveNow();
+          try{ saveNow(); }catch(e){}
           clearInterval(MANUAL_UNBAN_INTERVAL);
           location.reload();
+          return;
         }
         const el = $('#unbanStatus');
-        if (el) el.textContent = 'Ban status: ' + (banned ? 'Banned' : 'Unbanned! Reloading...');
+        if (el) el.textContent = 'Ban status: Banned. Waiting for admin unban...';
       }catch(e){}
     }
-  }, 5000); // Check every 5 seconds
+  }, 2000); // Check every 2 seconds for near-instant unban delivery
 }
 
 /* Process referral during loading screen - ONLY uses start_param, shows welcome ONCE */
